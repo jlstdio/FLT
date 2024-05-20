@@ -1,2 +1,7 @@
 # FLT
-Federated Learning Tool: A Tool for FL
+A Tool for FL
+
+# Environment
+`pip install syft torch torchvision`
+
+
