@@ -1,3 +1,4 @@
+from client.virtualClient import virtualClient
 from dataPrepare.iid import iidSplit
 from dataPrepare.noniid import dirichletSplit
 from dataset.cifar10.cifar10DataLoader import cifar10Dataloader
@@ -13,7 +14,6 @@ mnist_dataloader = mnistDataloader(train_img_path, train_label_path, test_img_pa
 data_dir = './dataset/cifar10'
 cifar_dataloader = cifar10Dataloader(data_dir)
 
-
 (x_train, y_train), (x_test, y_test) = cifar_dataloader.load_data()
 # (x_train, y_train), (x_test, y_test) = mnist_dataloader.load_data()
 
@@ -24,4 +24,6 @@ classes = list(set(y_train))
 # clientsDict = iidSplit(trainDataset, classes, 1000, 6)
 clientsDict = dirichletSplit(trainDataset, classes, 1, 6)
 
-showDistribution(clientsDict, classes)
+# showDistribution(clientsDict, classes)
+
+vc = virtualClient(5)
