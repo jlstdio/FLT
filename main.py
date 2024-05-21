@@ -1,9 +1,11 @@
-from client.virtualClient import virtualClient
+from client.virtualClient import Client
 from dataPrepare.iid import iidSplit
 from dataPrepare.noniid import dirichletSplit
 from dataset.cifar10.cifar10DataLoader import cifar10Dataloader
 from dataset.mnist.mnistDataLoader import mnistDataloader
+from server.virtualServer import Server
 from util import showDistribution
+import torch
 
 train_img_path = './dataset/mnist/train/train-images-idx3-ubyte'
 train_label_path = './dataset/mnist/train/train-labels-idx1-ubyte'
@@ -26,4 +28,24 @@ clientsDict = dirichletSplit(trainDataset, classes, 1, 6)
 
 # showDistribution(clientsDict, classes)
 
-vc = virtualClient(5)
+
+# IMPLEMENTATION ###############################
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+num_clients = 3
+clients = [Client(client_id=i, device=device) for i in range(num_clients)]
+server = Server(device=device)
+
+# Start the server
+server.start()
+
+# Start all clients
+for client in clients:
+    client.start()
+
+# Wait for the server to finish
+server.join()
+
+# Wait for all clients to finish
+for client in clients:
+    client.join()
