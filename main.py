@@ -1,10 +1,8 @@
 from client.virtualClient import Client
-from dataPrepare.iid import iidSplit
 from dataPrepare.noniid import dirichletSplit
 from dataset.cifar10.cifar10DataLoader import cifar10Dataloader
 from dataset.mnist.mnistDataLoader import mnistDataloader
 from server.virtualServer import Server
-from util import showDistribution
 import torch
 
 train_img_path = './dataset/mnist/train/train-images-idx3-ubyte'
