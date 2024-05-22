@@ -6,5 +6,7 @@ A Tool for FL
 
 `pip install torch`
 
-`pip install syft==0.2.9`
+# TODOs
 
+- GPU parallel setup
+- virtual device spec config

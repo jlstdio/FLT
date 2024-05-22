@@ -1,11 +1,11 @@
 import multiprocessing
 import numpy as np
-from client.virtualClient import Client
+from client.client import Client
 from dataPrepare.iid import iidSplit
 from dataPrepare.noniid import dirichletSplit
 from dataset.cifar10.cifar10DataLoader import cifar10Dataloader
 from dataset.mnist.mnistDataLoader import mnistDataloader
-from server.virtualServer import Server
+from server.server import Server
 import torch
 
 train_img_path = './dataset/mnist/train/train-images-idx3-ubyte'
@@ -15,13 +15,14 @@ test_label_path = './dataset/mnist/test/t10k-labels-idx1-ubyte'
 
 data_dir = './dataset/cifar10'
 
+# mnist_dataloader = mnistDataloader(train_img_path, train_label_path, test_img_path, test_label_path)
+# (x_train, y_train), (x_test, y_test) = mnist_dataloader.load_data()  # 28 * 28 * 1 data
+
+cifar_dataloader = cifar10Dataloader(data_dir)
+(x_train, y_train), (x_test, y_test) = cifar_dataloader.load_data()  # 32 * 32 * 3 data
+
 # IMPLEMENTATION ###############################
 if __name__ == "__main__":
-    mnist_dataloader = mnistDataloader(train_img_path, train_label_path, test_img_path, test_label_path)
-    cifar_dataloader = cifar10Dataloader(data_dir)
-
-    (x_train, y_train), (x_test, y_test) = cifar_dataloader.load_data()  # 32 * 32 * 3 data
-    # (x_train, y_train), (x_test, y_test) = mnist_dataloader.load_data()  # 28 * 28 * 1 data
 
     trainDataset = zip(y_train, x_train)
     testDataset = zip(y_test, x_test)
@@ -34,6 +35,7 @@ if __name__ == "__main__":
 
     multiprocessing.set_start_method('spawn')
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f'{device} available')
 
     num_clients = 3
     clients = [Client(client_id=i, device=device, dataset=clientsDict[i]) for i in range(num_clients)]
