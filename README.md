@@ -7,6 +7,11 @@ A Tool for FL
 `pip install torch`
 
 # TODOs
-
-- GPU parallel setup
-- virtual device spec config
+- Virtual env config
+  - [ ] GPU parallel setup
+- Edge device config
+  - [ ] virtual device spec config
+  - [ ] Individual learning phase config
+- Protocol config
+  - [ ] Parameter uplink to server
+  - [ ] Model downlink to edge
