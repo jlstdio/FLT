@@ -1,6 +1,6 @@
 from multiprocessing import Process
 from torch import optim, nn
-from model.testModel import SimpleNN
+from model.testModel import testNN
 import torch
 import os
 
@@ -9,9 +9,10 @@ class Server(Process):
     def __init__(self, device):
         super(Server, self).__init__()
         self.device = device
-        self.model = SimpleNN().to(self.device)
+        self.model = testNN().to(self.device)
         self.optimizer = optim.SGD(self.model.parameters(), lr=0.01)
         self.criterion = nn.BCELoss()
+        print("Server online")
 
     def train(self, data, targets, epochs=10):
         self.model.train()

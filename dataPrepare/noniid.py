@@ -1,6 +1,5 @@
 import numpy as np
 
-
 def dirichletSplit(dataset, classes, alpha, numClients):
     clientsDict = {i: [] for i in range(numClients)}
     class_data = {cls: [] for cls in classes}

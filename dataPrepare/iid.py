@@ -1,7 +1,10 @@
+import numpy as np
+
 def iidSplit(dataset, classes, batchSize, numClients):
     clientsDict = {i: [] for i in range(numClients)}
     class_data = {cls: [] for cls in classes}
 
+    # Organize dataset by classes
     for cls, data in dataset:
         class_data[cls].append(data)
 
