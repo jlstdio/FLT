@@ -1,12 +1,18 @@
 import multiprocessing
+import os
 import numpy as np
 from client.client import Client
 from dataPrepare.iid import iidSplit
 from dataPrepare.noniid import dirichletSplit
 from dataset.cifar10.cifar10DataLoader import cifar10Dataloader
 from dataset.mnist.mnistDataLoader import mnistDataloader
+# from model.resnet50 import resNet50
+from model.testModel import testNN
 from server.server import Server
+import json
 import torch
+from torch import nn
+from util.util import showDistribution
 
 train_img_path = './dataset/mnist/train/train-images-idx3-ubyte'
 train_label_path = './dataset/mnist/train/train-labels-idx1-ubyte'
@@ -23,25 +29,31 @@ cifar_dataloader = cifar10Dataloader(data_dir)
 
 # IMPLEMENTATION ###############################
 if __name__ == "__main__":
+    numClients = 3
+
+    print('Count of using GPUs:', torch.cuda.device_count())
 
     trainDataset = zip(y_train, x_train)
     testDataset = zip(y_test, x_test)
-
     classes = list(set(y_train))
-    clientsDict = iidSplit(trainDataset, classes, 8000, 6)
-    # clientsDict = dirichletSplit(trainDataset, classes, 1, 6)
 
+    clientsDict = iidSplit(trainDataset, classes, round(len(y_train)/numClients), numClients)
+    # clientsDict = dirichletSplit(trainDataset, classes, 1, numClients)
     # showDistribution(clientsDict, classes)
 
-    multiprocessing.set_start_method('spawn')
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f'{device} available')
+    clientConfigPath = './client/clientConfig.json'
 
-    num_clients = 3
-    clients = [Client(client_id=i, device=device, dataset=clientsDict[i]) for i in range(num_clients)]
+    with open(clientConfigPath, 'r') as file:
+        data = json.load(file)
+
+    clientConfig = data['clients']
+    multiprocessing.set_start_method('spawn')
+    # modelToLoad = nn.DataParallel(testNN())
+    modelToLoad = testNN()
+    # modelToLoad = resNet50().getModel()
+    clients = [Client(client_id=i, dataset=clientsDict[i], config=clientConfig[0], model=modelToLoad) for i in range(numClients)]
     # server = Server(device=device)
 
-    # Start the server
     # server.start()
 
     # Start all clients

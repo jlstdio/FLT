@@ -1,0 +1,55 @@
+{
+  "clients": [
+    {
+      "type": "A",
+      "gpuClk": 1.0,
+      "vram": 300,
+      "cpuClk": 1.0,
+      "ram": 300,
+      "disk": 500,
+      "memFrac": 0.01,
+      "learningRate": 1e-4,
+      "momentum": 0.9,
+      "epoch": 10,
+      "batchSize": 32,
+      "iteration": 1000,
+      "costFunc": "BCELoss",
+      "reg": "L2",
+      "model": "testNN"
+    },
+    {
+      "type": "B",
+      "gpuClk": 1.0,
+      "vram": 300,
+      "cpuClk": 1.0,
+      "ram": 300,
+      "disk": 500,
+      "memFrac": 0.4,
+      "learningRate": 0.002,
+      "momentum": 0.8,
+      "epoch": 15,
+      "batchSize": 64,
+      "iteration": 1200,
+      "costFunc": "BCELoss",
+      "reg": "L1",
+      "model": "testNN"
+    },
+    {
+      "type": "C",
+      "gpuClk": 1.0,
+      "vram": 300,
+      "cpuClk": 1.0,
+      "ram": 300,
+      "disk": 500,
+      "memFrac": 0.6,
+      "learningRate": 0.0005,
+      "momentum": 0.7,
+      "epoch": 20,
+      "batchSize": 16,
+      "iteration": 1500,
+      "costFunc": "MSELoss",
+      "reg": "L2",
+      "model": "testNN"
+    }
+  ]
+}
