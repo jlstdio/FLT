@@ -1,21 +1,35 @@
 # FLT
 A Tool for FL
 
-# Environment
-`pip install torchvision`
+This is a project to make a FL enable on a single(or multiple) server.
 
-`pip install torch`
+Without using physical device setup (which is alot of work).
+
+`FLT` is looking forward to mimic resource limits(vRam, cpu clk, ram, memory, network spec... etc).
+
+Making experiment setup alot easier for FL/CL.
+
+# Notice
+- Major update alert : Whole system will be written using `Kubernetes`
+
+# Environment
+- python 3.10.0
+- venv : required modules in requirements.txt
+  - `pip install -r requirements.txt`
+
+# Whats available
+- Clients & server configuration on a single file : `config.json`
+  - Only defined dataset & model, configuration is only file you need to change
+- Server
+- Limited clients instance
+  - Depend on model size (e.g. gtx 2080ti x 4 : 20 clients on `testModel.py` model)
+- Gpu sharing for clients
+- Federated Learning Optimizer
+  - FedAvg
+  - TBA
 
 # TODOs
-- Virtual env config
-  - [ ] GPU parallel setup
-- Edge device config
-  - [ ] virtual device spec config
-  - [ ] Individual learning phase config
-- Protocol config
-  - [ ] Parameter uplink to server
-  - [ ] Model downlink to edge
-
+- Development plan changed to developing 'kubernetes' 
 
 # 실험 목록
 - 모두가 같은 epoch로 학습한 결과보기
