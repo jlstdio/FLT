@@ -1,3 +1,5 @@
+import os.path
+
 import matplotlib.pyplot as plt
 
 
@@ -24,3 +26,24 @@ def showDistribution(clientsDict, classes):
 
     plt.tight_layout()
     plt.show()
+
+
+# state_dict에서 'module.' 제거하는 함수
+def remove_module_prefix(state_dict):
+    new_state_dict = {}
+    for k, v in state_dict.items():
+        if k.startswith('module.'):
+            new_state_dict[k[7:]] = v
+        else:
+            new_state_dict[k] = v
+    return new_state_dict
+
+
+def dltAllFiles(path):
+    if os.path.exists(path):
+        for file in os.scandir(path):
+            os.remove(file.path)
+        print(f'all files in {path} removed')
+    else:
+        print(f'directory not exist')
+

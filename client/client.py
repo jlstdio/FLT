@@ -1,4 +1,8 @@
+import copy
+import time
 from multiprocessing import Process
+from random import shuffle
+
 from torch import optim, nn
 from torch.cuda import set_per_process_memory_fraction, is_available
 from torch.utils.data import DataLoader, TensorDataset
@@ -9,27 +13,42 @@ import os
 
 
 class Client(Process):
-    def __init__(self, client_id, dataset, config, model):
-        super(Client, self).__init__()
+    def __init__(self, client_internalId, clientsPerCuda, dataset, config, model, serverRound, flipboard, wandb):
+        super().__init__()
+        self.flipboard = flipboard
         self.test_loader = None
         self.val_loader = None
         self.train_loader = None
         self.dataset = dataset
         self.config = config
-        self.client_id = client_id
+        self.learningRate = config['learningRate']
+        self.client_internalId = client_internalId
         self.model = model
+        self.round = 0
+        self.serverRound = serverRound
+        self.server = None
+        self.wandb = wandb
+        cudaId = self.client_internalId // clientsPerCuda
 
-        self.device = torch.device("cuda" if is_available() else "cpu")
+        '''
+        # Wrap the model with DataParallel
+        if torch.cuda.device_count() > 1:
+            self.model = nn.DataParallel(self.model)
+        '''
 
+        # self.device = torch.device(f"cuda" if is_available() else "cpu")
+        self.device = torch.device(f"cuda:{cudaId}" if is_available() else "cpu")
+        '''
         if is_available():
             set_per_process_memory_fraction(self.config['memFrac'], self.device.index)
             torch.backends.cudnn.benchmark = True
-
+        '''
         self.model = model.to(self.device)
-        self.optimizer = optim.SGD(self.model.parameters(), lr=self.config['learningRate'])
+        self.optimizer = optim.SGD(self.model.parameters(), lr=self.learningRate)
         self.criterion = nn.BCELoss()
         # self.criterion = nn.CrossEntropyLoss()
-        print(f"Client {client_id} online")
+        # self.criterion = F.nll_loss
+        print(f"Client {client_internalId} online")
         print(f'{self.device} available')
 
 
@@ -40,10 +59,12 @@ class Client(Process):
         '''
 
         train_ratio = 0.8
-        validation_ratio = 0.2
+        validation_ratio = 1.0 - train_ratio #0.2
 
         lenData = len(self.dataset)
         train_size = int(train_ratio * lenData)
+
+        shuffle(self.dataset)
 
         train_data = self.dataset[:train_size]
         validation_data = self.dataset[train_size:]
@@ -59,11 +80,13 @@ class Client(Process):
         valid_y = np.array(valid_y)
         valid_y = np.eye(10)[valid_y]
 
+        # print(f'train y : {np.argmax(train_y, axis=1)} | valid y : {np.argmax(valid_y, axis=1)}')
+
         X_train = torch.tensor(train_x, dtype=torch.float32).permute(0, 3, 1, 2)
-        y_train = torch.tensor(train_y, dtype=torch.float32)
+        y_train = torch.tensor(train_y, dtype=torch.float32) # float32
 
         X_val = torch.tensor(valid_x, dtype=torch.float32).permute(0, 3, 1, 2)
-        y_val = torch.tensor(valid_y, dtype=torch.float32)
+        y_val = torch.tensor(valid_y, dtype=torch.float32) # float32
 
         X_train = F.normalize(X_train, dim=0)
         X_val = F.normalize(X_val, dim=0)
@@ -72,9 +95,11 @@ class Client(Process):
         val_dataset = TensorDataset(X_val, y_val)
 
         self.train_loader = DataLoader(train_dataset, batch_size=self.config['batchSize'], shuffle=True)
-        self.val_loader = DataLoader(val_dataset, batch_size=self.config['batchSize'], shuffle=False)
+        self.val_loader = DataLoader(val_dataset, batch_size=self.config['batchSize'], shuffle=True)
 
     def train(self, epochs=10):
+        self.round = self.serverRound.value
+        print(f'client{self.client_internalId} lr at {self.learningRate}')
         self.model.train()
         for epoch in range(epochs):
             running_loss = 0.0
@@ -89,26 +114,63 @@ class Client(Process):
                 running_loss += loss.item()
 
             avg_loss = running_loss / len(self.train_loader)
-            print(f"Client {self.client_id} Epoch [{epoch + 1}/{epochs}], Loss: {avg_loss:.4f}")
+
+            self.wandb.log({f"client{self.client_internalId} training loss": avg_loss})
+            # print(f"Client {self.client_internalId} Epoch [{epoch + 1}/{epochs}], Loss: {avg_loss:.4f}")
+        self.learningRate *= self.config['lr_decay']
 
     def validate(self):
         self.model.eval()
+        acc = 0
+        count = 0
         with torch.no_grad():
             total_loss = 0
             for inputs, targets in self.val_loader:
                 inputs = inputs.to(self.device)
                 targets = targets.to(self.device)
                 outputs = self.model(inputs)
+
+                outputs_cpu = outputs.cpu()
+                targets_cpu = targets.cpu()
+                npOutputs = np.argmax(np.array(outputs_cpu), axis=1)
+                npTargets = np.argmax(np.array(targets_cpu), axis=1)
+
+                for i in range(len(npOutputs)):
+                    singleOutput = npOutputs[i]
+                    singleTarget = npTargets[i]
+
+                    # print(f'data of ans: {singleOutput} target: {singleTarget}')
+                    count += 1
+                    if singleOutput == singleTarget:
+                        acc += 1
+
                 loss = self.criterion(outputs, targets)
                 total_loss += loss.item()
             avg_loss = total_loss / len(self.val_loader)
-            print(f"Client {self.client_id} Validation Loss: {avg_loss:.4f}")
+            acc /= count
+            acc *= 100.0
+
+            self.wandb.log({f"client{self.client_internalId} validation loss": avg_loss})
+            print(f"Client {self.client_internalId} Validation Loss: {avg_loss:.4f} session validation accuracy: {acc}")
 
     def run(self):
-        print(f"Client {self.client_id} with PID {os.getpid()} started.")
 
-        self.loadData()
-        self.train(epochs=self.config['epoch'])
-        self.validate()
+        print(f"Client {self.client_internalId} with PID {os.getpid()} started.")
 
-        print(f"Client {self.client_id} finished training")
+        while True:
+            if self.serverRound.value == -1:
+                print(f"Client {self.client_internalId} finished its session")
+                break
+
+            elif self.serverRound.value > self.round:
+                self.loadData()
+                rootModelPath = './server/rootModel/rootModel.pth'
+                model_state_dict = torch.load(rootModelPath, map_location=self.device)
+                self.model.load_state_dict(model_state_dict)
+                self.train(epochs=self.config['epoch'])
+                self.validate()
+                torch.save(self.model.state_dict(), f'./server/receivedPth/{self.client_internalId}_round{self.round}.pth')
+                self.flipboard[self.client_internalId] = 1
+
+                print(f"Client {self.client_internalId} finished training round {self.round}")
+                time.sleep(5)
