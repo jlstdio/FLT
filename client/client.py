@@ -13,22 +13,27 @@ import os
 
 
 class Client(Process):
-    def __init__(self, client_internalId, clientsPerCuda, dataset, config, model, serverRound, flipboard, wandb):
+    def __init__(self, client_internalId, clientsPerCuda, dataset, config, model, serverRound, flipboard, turnFlag, sessionId, wandb):
         super().__init__()
+        self.device = None
+        self.model = None
+        self.optimizer = None
         self.flipboard = flipboard
         self.test_loader = None
         self.val_loader = None
         self.train_loader = None
         self.dataset = dataset
         self.config = config
+        self.sessionId = sessionId
+        self.turnFlag = turnFlag
         self.learningRate = config['learningRate']
         self.client_internalId = client_internalId
-        self.model = model
+        self.modelReserved = model
         self.round = 0
         self.serverRound = serverRound
         self.server = None
         self.wandb = wandb
-        cudaId = self.client_internalId // clientsPerCuda
+        self.clientsPerCuda = clientsPerCuda
 
         '''
         # Wrap the model with DataParallel
@@ -36,18 +41,14 @@ class Client(Process):
             self.model = nn.DataParallel(self.model)
         '''
 
-        # self.device = torch.device(f"cuda" if is_available() else "cpu")
-        self.device = torch.device(f"cuda:{cudaId}" if is_available() else "cpu")
+        self.criterion = nn.BCELoss()
+        # self.criterion = nn.CrossEntropyLoss()
+        # self.criterion = F.nll_loss
         '''
         if is_available():
             set_per_process_memory_fraction(self.config['memFrac'], self.device.index)
             torch.backends.cudnn.benchmark = True
         '''
-        self.model = model.to(self.device)
-        self.optimizer = optim.SGD(self.model.parameters(), lr=self.learningRate)
-        self.criterion = nn.BCELoss()
-        # self.criterion = nn.CrossEntropyLoss()
-        # self.criterion = F.nll_loss
         print(f"Client {client_internalId} online")
         print(f'{self.device} available')
 
@@ -98,7 +99,7 @@ class Client(Process):
         self.val_loader = DataLoader(val_dataset, batch_size=self.config['batchSize'], shuffle=True)
 
     def train(self, epochs=10):
-        self.round = self.serverRound.value
+        self.optimizer = optim.SGD(self.model.parameters(), lr=self.learningRate)
         print(f'client{self.client_internalId} lr at {self.learningRate}')
         self.model.train()
         for epoch in range(epochs):
@@ -163,14 +164,29 @@ class Client(Process):
                 break
 
             elif self.serverRound.value > self.round:
-                self.loadData()
-                rootModelPath = './server/rootModel/rootModel.pth'
-                model_state_dict = torch.load(rootModelPath, map_location=self.device)
-                self.model.load_state_dict(model_state_dict)
-                self.train(epochs=self.config['epoch'])
-                self.validate()
-                torch.save(self.model.state_dict(), f'./server/receivedPth/{self.client_internalId}_round{self.round}.pth')
-                self.flipboard[self.client_internalId] = 1
-
-                print(f"Client {self.client_internalId} finished training round {self.round}")
-                time.sleep(5)
+                self.round = self.serverRound.value
+                if self.turnFlag[self.client_internalId] == 1:
+                    self.model = copy.deepcopy(self.modelReserved)
+                    cudaId = self.sessionId[self.client_internalId] // self.clientsPerCuda
+                    self.device = torch.device(f"cuda:{cudaId}" if is_available() else "cpu")
+                    self.loadData()
+                    rootModelPath = './server/rootModel/rootModel.pth'
+                    model_state_dict = torch.load(rootModelPath, map_location=self.device)
+                    self.model.load_state_dict(model_state_dict)
+                    self.model = self.model.to(self.device)
+                    self.train(epochs=self.config['epoch'])
+                    torch.save(self.model.state_dict(),f'./server/receivedPth/{self.client_internalId}_round{self.round}.pth')
+                    self.validate()
+                    self.model = self.model.to('cpu')
+                    self.flipboard[self.client_internalId] = 1
+                    del self.model
+                    # torch.cuda.empty_cache()
+                    print(f"Client {self.client_internalId} finished training round {self.round}")
+                    time.sleep(5)
+                else:
+                    '''
+                    rootModelPath = './server/rootModel/rootModel.pth'
+                    model_state_dict = torch.load(rootModelPath, map_location=self.device)
+                    self.model.load_state_dict(model_state_dict)
+                    '''
+                    # print(f"Client {self.client_internalId} is skipping this round")

@@ -47,3 +47,7 @@ def dltAllFiles(path):
     else:
         print(f'directory not exist')
 
+
+def makeFile(idx):
+    f = open(f"receivedPth/{idx}_file.pth", 'w')
+    f.close()

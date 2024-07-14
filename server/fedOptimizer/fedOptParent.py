@@ -1,5 +1,6 @@
 import copy
 import torch
+from numba.cuda import is_available
 from util.util import remove_module_prefix
 
 
@@ -16,7 +17,7 @@ class fedOptParent:
         self.resultRootModel = copy.deepcopy(self.rootModelStatic)
         self.clientsModels = []
         self.clientsLosses = []
-        self.device = f"cuda:{cudaId}" if torch.cuda.is_available() else "cpu"
+        self.device = torch.device(f"cuda:{cudaId}" if is_available() else "cpu")
 
     def flush(self):
         self.resultRootModel = copy.deepcopy(self.rootModelStatic)
