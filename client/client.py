@@ -13,7 +13,7 @@ import os
 
 
 class Client(Process):
-    def __init__(self, client_internalId, clientsPerCuda, dataset, config, model, serverRound, flipboard, turnFlag, sessionId, wandb):
+    def __init__(self, client_internalId, clientsPerCuda, dataset, config, model, serverRound, flipboard, turnFlag, lrMem, sessionId, wandbQueue):
         super().__init__()
         self.device = None
         self.model = None
@@ -26,13 +26,13 @@ class Client(Process):
         self.config = config
         self.sessionId = sessionId
         self.turnFlag = turnFlag
-        self.learningRate = config['learningRate']
+        self.lrMem = lrMem
+        self.learningRate = lrMem[client_internalId]
         self.client_internalId = client_internalId
         self.modelReserved = model
         self.round = 0
+        self.wandbQueue = wandbQueue
         self.serverRound = serverRound
-        self.server = None
-        self.wandb = wandb
         self.clientsPerCuda = clientsPerCuda
 
         '''
@@ -50,7 +50,6 @@ class Client(Process):
             torch.backends.cudnn.benchmark = True
         '''
         print(f"Client {client_internalId} online")
-        print(f'{self.device} available')
 
 
     def loadData(self):
@@ -115,10 +114,14 @@ class Client(Process):
                 running_loss += loss.item()
 
             avg_loss = running_loss / len(self.train_loader)
+            key = f"client{self.client_internalId} training loss"
 
-            self.wandb.log({f"client{self.client_internalId} training loss": avg_loss})
+            self.wandbQueue.put([key, avg_loss])
+            # self.wandbClient.sendLog(key=f"client{self.client_internalId} training loss", data=avg_loss)
             # print(f"Client {self.client_internalId} Epoch [{epoch + 1}/{epochs}], Loss: {avg_loss:.4f}")
         self.learningRate *= self.config['lr_decay']
+        self.learningRate = round(self.learningRate, 6)
+        self.lrMem[self.client_internalId] = copy.deepcopy(self.learningRate)
 
     def validate(self):
         self.model.eval()
@@ -151,42 +154,28 @@ class Client(Process):
             acc /= count
             acc *= 100.0
 
-            self.wandb.log({f"client{self.client_internalId} validation loss": avg_loss})
+            key = f"client{self.client_internalId} validation loss"
+            self.wandbQueue.put([key, avg_loss])
+            # self.wandbClient.sendLog(key=f"client{self.client_internalId} validation loss", data=avg_loss)
             print(f"Client {self.client_internalId} Validation Loss: {avg_loss:.4f} session validation accuracy: {acc}")
 
     def run(self):
 
         print(f"Client {self.client_internalId} with PID {os.getpid()} started.")
 
-        while True:
-            if self.serverRound.value == -1:
-                print(f"Client {self.client_internalId} finished its session")
-                break
+        self.round = self.serverRound.value
+        self.model = copy.deepcopy(self.modelReserved)
+        cudaId = self.sessionId[self.client_internalId] // self.clientsPerCuda
+        self.device = torch.device(f"cuda:{cudaId}" if is_available() else "cpu")
+        self.loadData()
+        rootModelPath = './server/rootModel/rootModel.pth'
+        model_state_dict = torch.load(rootModelPath, map_location=self.device)
+        self.model.load_state_dict(model_state_dict)
+        self.model = self.model.to(self.device)
+        self.train(epochs=self.config['epoch'])
 
-            elif self.serverRound.value > self.round:
-                self.round = self.serverRound.value
-                if self.turnFlag[self.client_internalId] == 1:
-                    self.model = copy.deepcopy(self.modelReserved)
-                    cudaId = self.sessionId[self.client_internalId] // self.clientsPerCuda
-                    self.device = torch.device(f"cuda:{cudaId}" if is_available() else "cpu")
-                    self.loadData()
-                    rootModelPath = './server/rootModel/rootModel.pth'
-                    model_state_dict = torch.load(rootModelPath, map_location=self.device)
-                    self.model.load_state_dict(model_state_dict)
-                    self.model = self.model.to(self.device)
-                    self.train(epochs=self.config['epoch'])
-                    torch.save(self.model.state_dict(),f'./server/receivedPth/{self.client_internalId}_round{self.round}.pth')
-                    self.validate()
-                    self.model = self.model.to('cpu')
-                    self.flipboard[self.client_internalId] = 1
-                    del self.model
-                    # torch.cuda.empty_cache()
-                    print(f"Client {self.client_internalId} finished training round {self.round}")
-                    time.sleep(5)
-                else:
-                    '''
-                    rootModelPath = './server/rootModel/rootModel.pth'
-                    model_state_dict = torch.load(rootModelPath, map_location=self.device)
-                    self.model.load_state_dict(model_state_dict)
-                    '''
-                    # print(f"Client {self.client_internalId} is skipping this round")
+        torch.save(self.model.state_dict(), f'./server/receivedPth/{self.client_internalId}_round{self.round}.pth')
+        self.validate()
+        self.flipboard[self.client_internalId] = 1
+
+        print(f"Client {self.client_internalId} finished training round {self.round}")

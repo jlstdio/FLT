@@ -1,6 +1,7 @@
 import copy
 import multiprocessing
 import os
+import time
 from random import shuffle
 import numpy as np
 from client.client import Client
@@ -18,6 +19,7 @@ import torch
 import wandb
 from torch import nn
 from util.util import showDistribution, dltAllFiles
+from wandbClient import wandbClient
 
 # train_img_path = './dataset/mnist/train/train-images-idx3-ubyte'
 # train_label_path = './dataset/mnist/train/train-labels-idx1-ubyte'
@@ -33,6 +35,7 @@ cifar_dataloader = cifar10Dataloader(data_dir)
 (x_train, y_train), (x_test, y_test) = cifar_dataloader.load_data()  # 32 * 32 * 3 data
 
 # IMPLEMENTATION ###############################
+
 if __name__ == "__main__":
 
     dltAllFiles('./server/aggregatedPth')
@@ -49,35 +52,56 @@ if __name__ == "__main__":
     numClients = basicConfig['numClient']
     updateClientsPerRound = basicConfig['updateClientsPerRound']
 
-    wandbServ = wandb.init(project=basicConfig['projectName'],config=config)
-
     print('Count of using GPUs:', torch.cuda.device_count())
 
     trainDataset = zip(y_train, x_train)
     testDataset = zip(y_test[:1000], x_test[:1000])
     classes = list(set(y_train))
 
-    clientsDict = iidSplit(trainDataset, classes, round(len(y_train)/numClients), numClients)
-    # clientsDict = dirichletSplit(trainDataset, classes, 1, numClients)
+    # clientsDict = iidSplit(trainDataset, classes, round(len(y_train)/numClients), numClients)
+    clientsDict = dirichletSplit(trainDataset, classes, 1, numClients)
     # showDistribution(clientsDict, classes)
 
     multiprocessing.set_start_method('spawn')
     clientsPerCuda = basicConfig['clientsPerCuda']
     # modelToLoad = nn.DataParallel(testNN())
     modelToLoad = [testNN() for i in range (numClients + 2)]
-    serverCudaId = numClients // clientsPerCuda
-    flModel = fedAvg(modelToLoad[numClients + 1], serverCudaId)
+    serverCudaId = updateClientsPerRound // clientsPerCuda
+    flModel = fedAvg(modelToLoad[numClients + 1])
     # modelToLoad = resNet50().getModel()
-    serverRound = multiprocessing.Value('i', 0)
-    flipboard = multiprocessing.Array('i', range(numClients))
-    turnFlag = multiprocessing.Array('i', range(numClients))
-    sessionId = multiprocessing.Array('i', range(numClients))
-    for i in range(numClients):
-        flipboard[i] = 1
-        turnFlag[i] = 0
 
-    network = FLNetwork()
+    wandbClient = wandbClient(config=config)
+    wandbQueue = wandbClient.getQueue()
+    wandbClient.start()
 
-    server = Server(rootModel=modelToLoad[numClients], cudaId=serverCudaId, flModel=flModel, examinDataset=testDataset, serverConfig=serverConfig, basicConfig=basicConfig, currentRound=serverRound, flipboard=flipboard, turnFlag=turnFlag, sessionId=sessionId, wandb=wandbServ)
+    network = FLNetwork(numClients=numClients,
+                        basicConfig=basicConfig,
+                        clientsDict=clientsDict,
+                        clientConfig=clientConfig,
+                        modelToLoad=modelToLoad,
+                        wandbQueue=wandbQueue)
+
+    network.start()
+
+    serverRound, flipboard, turnFlag, sessionId, pickedClients = network.getSharedInfo()
+
+    server = Server(rootModel=modelToLoad[numClients],
+                    cudaId=serverCudaId,
+                    flModel=flModel,
+                    examinDataset=testDataset,
+                    serverConfig=serverConfig,
+                    basicConfig=basicConfig,
+                    currentRound=serverRound,
+                    flipboard=flipboard,
+                    turnFlag=turnFlag,
+                    sessionId=sessionId,
+                    pickedClientsList=pickedClients,
+                    wandbQueue=wandbQueue)
+
     server.start()
 
+    # starts FL
+    server.startFL()
+
+    server.join()
+    network.join()

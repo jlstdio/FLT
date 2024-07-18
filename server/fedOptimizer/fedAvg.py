@@ -16,8 +16,8 @@ def average_weights(weights: List[Dict[str, torch.Tensor]]) -> Dict[str, torch.T
 
 
 class fedAvg(fedOptParent):
-    def __init__(self, rootModel, cudaId):
-        super().__init__(rootModel, cudaId)
+    def __init__(self, rootModel):
+        super().__init__(rootModel)
 
     def aggregate(self):
         # Update server model based on clients models

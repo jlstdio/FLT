@@ -3,9 +3,9 @@
     "projectName": "FLT",
     "dataset": "cifar-10",
     "model": "custom CNN",
-    "numClient" : 25,
-    "clientsPerCuda": 4,
-    "updateClientsPerRound": 10
+    "numClient" : 100,
+    "clientsPerCuda": 5,
+    "updateClientsPerRound": 18
   },
   "clients": [
     {
@@ -62,7 +62,7 @@
     }
   ],
   "server": {
-    "flRound": 1000,
+    "flRound": 2000,
     "examinData_batchSize": 10
   }
 }

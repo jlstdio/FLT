@@ -20,10 +20,9 @@ class PTHFileHandler(FileSystemEventHandler):
 
 
 class Server(Process):
-    def __init__(self, rootModel, cudaId, flModel, examinDataset, serverConfig, basicConfig, currentRound, flipboard, turnFlag, sessionId, wandb):
+    def __init__(self, rootModel, cudaId, flModel, examinDataset, serverConfig, basicConfig, currentRound, flipboard, turnFlag, sessionId, pickedClientsList, wandbQueue):
         super(Server, self).__init__()
-        self.device = None
-        self.wandb = wandb
+        self.wandbQueue = wandbQueue
         self.serverConfig = serverConfig
         self.basicConfig = basicConfig
         self.cudaId = cudaId
@@ -39,6 +38,7 @@ class Server(Process):
         self.status = [True for i in range(self.participants)]
         self.flipboard = flipboard
         self.examinDataset = examinDataset
+        self.pickedClientsList = pickedClientsList
         self.clientsList = [i for i in range(self.participants)]
 
         # mkdir
@@ -78,7 +78,6 @@ class Server(Process):
     def run_FL(self):
         pth_files = [os.path.join(self.pth_folder, f) for f in os.listdir(self.pth_folder) if f.endswith('.pth')]
         print(f"Running round {self.currentRound.value} FL with {len(pth_files)} clients")
-        self.device = torch.device(f"cuda" if is_available() else "cpu")
 
         self.flModel.flush()
 
@@ -92,10 +91,9 @@ class Server(Process):
         examinManager = examinModel(self.internalIdWithClients, self.cudaId, self.examinDataset, self.serverConfig['examinData_batchSize'], self.rootModel, './server/rootModel/rootModel.pth')
         examinManager.loadData()
         loss, acc = examinManager.examin()
-        self.wandb.log({f"server aggregated validation loss": loss})
-        self.wandb.log({f"server aggregated accuracy": acc })
 
-        del self.rootModel
+        self.wandbQueue.put(["server aggregated validation loss", loss])
+        self.wandbQueue.put(["server aggregated accuracy", acc])
 
         # Reset status and increment round
         self.status = [True] * self.participants
@@ -110,8 +108,7 @@ class Server(Process):
         if self.targetRound > self.currentRound.value:
             self.pickClients()
             self.currentRound.value += 1
-
-        print(f'round is now {self.currentRound.value}')
+            print(f'round is now {self.currentRound.value}')
 
     def pickClients(self):
         updateClientsPerRound = self.basicConfig['updateClientsPerRound']
@@ -125,11 +122,14 @@ class Server(Process):
             self.turnFlag[i] = 1  # mark the client which is picked
             self.flipboard[i] = 0 # mark as file not sent
 
+        for i in range(updateClientsPerRound):
+            self.pickedClientsList[i] = pickedClients[i]
 
-    def informRunToClients(self):
+    def startFL(self):
         print('informing to clients')
         self.pickClients()
         self.currentRound.value = 1
+
 
     def run(self):
         event_handler = PTHFileHandler(self)
@@ -149,30 +149,3 @@ class Server(Process):
         except KeyboardInterrupt:
             observer.stop()
         observer.join()
-
-'''
-if __name__ == "__main__":
-    server = Server()
-    server_thread = Thread(target=server.run)
-    server_thread.start()
-
-    # 예시: 다른 스레드에서 register와 getRound 메서드 호출
-    print(f"Registered client ID: {server.register()}")
-    print(f"Current round: {server.getRound()}")
-    # 예시: 다른 스레드에서 register와 getRound 메서드 호출
-    print(f"Registered client ID: {server.register()}")
-    print(f"Current round: {server.getRound()}")
-    # 예시: 다른 스레드에서 register와 getRound 메서드 호출
-    print(f"Registered client ID: {server.register()}")
-    print(f"Current round: {server.getRound()}")
-
-    time.sleep(2)
-    makeFile(0)
-    time.sleep(2)
-    makeFile(1)
-    time.sleep(2)
-    makeFile(2)
-    time.sleep(2)
-
-    server_thread.join() 
-'''

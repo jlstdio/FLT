@@ -15,8 +15,7 @@ class examinModel:
         self.dataset = copy.deepcopy(dataset)
         self.examinData_batchSize = examinData_batchSize
         self.model = model
-        self.cudaId = cudaId
-        self.device = torch.device("cuda" if is_available() else "cpu")
+        self.device = torch.device(f"cuda:{cudaId}" if is_available() else "cpu")
         model_state_dict = torch.load(pthPath, map_location=self.device)  # torch.load(path, map_location=torch.device('cpu'))
         self.model.load_state_dict(model_state_dict)
         self.criterion = nn.BCELoss()
@@ -78,9 +77,6 @@ class examinModel:
             avg_loss = total_loss / len(self.val_loader)
             acc /= count
             acc *= 100
-
-            self.model = self.model.to('cpu')
-            torch.cuda.empty_cache()
             print(f"Server validation Loss: {avg_loss:.4f} | accuracy: {acc: .4f}")
 
         return avg_loss, acc
