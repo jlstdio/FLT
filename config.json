@@ -20,7 +20,7 @@
       "lr_decay": 0.99,
       "momentum": 0.9,
       "epoch": 5,
-      "batchSize": 10,
+      "batchSize": 100,
       "iteration": 1000,
       "costFunc": "BCELoss",
       "reg": "L2",
@@ -63,6 +63,6 @@
   ],
   "server": {
     "flRound": 2000,
-    "examinData_batchSize": 10
+    "examinData_batchSize": 100
   }
 }

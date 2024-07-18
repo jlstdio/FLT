@@ -3,6 +3,7 @@ import multiprocessing
 from multiprocessing import Process
 from client.client import Client
 import time
+import torch
 
 
 class FLNetwork(Process):
@@ -27,6 +28,13 @@ class FLNetwork(Process):
             self.flipboard[i] = 1
             self.turnFlag[i] = 0
             self.lrMemory[i] = 0.25
+
+        '''
+        seed = 1234
+        torch.manual_seed(seed)
+        np.random.seed(seed)
+        random.seed(seed)
+        '''
 
         print('network online')
 

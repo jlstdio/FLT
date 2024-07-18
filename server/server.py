@@ -40,6 +40,7 @@ class Server(Process):
         self.examinDataset = examinDataset
         self.pickedClientsList = pickedClientsList
         self.clientsList = [i for i in range(self.participants)]
+        self.lastAcc = 0.0
 
         # mkdir
         self.pth_folder = os.path.abspath(os.path.join(os.path.dirname(__file__), ".", "receivedPth"))
@@ -94,6 +95,15 @@ class Server(Process):
 
         self.wandbQueue.put(["server aggregated validation loss", loss])
         self.wandbQueue.put(["server aggregated accuracy", acc])
+
+        # FL anomaly check
+        if -10.0 > acc - self.lastAcc:
+            print(f'anomaly detected at {self.currentRound.value}')
+            torch.save(self.rootModel.state_dict(), f'../util/errorModel/rootModel_errored_at{self.currentRound.value}.pth')
+            self.currentRound = self.targetRound + 1
+            print('ejecting')
+
+        self.lastAcc = acc
 
         # Reset status and increment round
         self.status = [True] * self.participants
