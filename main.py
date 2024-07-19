@@ -25,7 +25,6 @@ from wandbClient import wandbClient
 # train_label_path = './dataset/mnist/train/train-labels-idx1-ubyte'
 # test_img_path = './dataset/mnist/test/t10k-images-idx3-ubyte'
 # test_label_path = './dataset/mnist/test/t10k-labels-idx1-ubyte'
-
 data_dir = './dataset/cifar10'
 
 # mnist_dataloader = mnistDataloader(train_img_path, train_label_path, test_img_path, test_label_path)
@@ -38,6 +37,7 @@ cifar_dataloader = cifar10Dataloader(data_dir)
 
 if __name__ == "__main__":
 
+    dltAllFiles('./util/errorModel')
     dltAllFiles('./server/aggregatedPth')
     dltAllFiles('./server/receivedPth')
     dltAllFiles('./server/rootModel')
@@ -58,8 +58,8 @@ if __name__ == "__main__":
     testDataset = zip(y_test[:1000], x_test[:1000])
     classes = list(set(y_train))
 
-    # clientsDict = iidSplit(trainDataset, classes, round(len(y_train)/numClients), numClients)
-    clientsDict = dirichletSplit(trainDataset, classes, 1, numClients)
+    clientsDict = iidSplit(trainDataset, classes, round(len(y_train)/numClients), numClients)
+    # clientsDict = dirichletSplit(trainDataset, classes, 0.25, numClients)
     # showDistribution(clientsDict, classes)
 
     multiprocessing.set_start_method('spawn')

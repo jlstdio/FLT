@@ -1,6 +1,10 @@
 import copy
 import multiprocessing
+import random
 from multiprocessing import Process
+
+import numpy as np
+
 from client.client import Client
 import time
 import torch
@@ -29,12 +33,10 @@ class FLNetwork(Process):
             self.turnFlag[i] = 0
             self.lrMemory[i] = 0.25
 
-        '''
-        seed = 1234
-        torch.manual_seed(seed)
-        np.random.seed(seed)
-        random.seed(seed)
-        '''
+        self.seed = basicConfig['seed']
+        torch.manual_seed(self.seed)
+        np.random.seed(self.seed)
+        random.seed(self.seed)
 
         print('network online')
 
@@ -48,6 +50,7 @@ class FLNetwork(Process):
             Client(client_internalId=i,
                    clientsPerCuda=self.clientsPerCuda,
                    dataset=self.clientsDict[i],
+                   seed=self.seed,
                    config=self.clientConfig[0],
                    model=self.modelToLoad[i],
                    serverRound=self.serverRound,
@@ -70,7 +73,10 @@ class FLNetwork(Process):
         while True:
             time.sleep(0.5)
             if self.serverRound.value > self.lastRound:
+                self.lastRound = self.serverRound.value
                 self.wakeUpClients()
+            elif self.serverRound.value == -1:
+                break
 
 
     def __del__(self):

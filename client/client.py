@@ -1,4 +1,5 @@
 import copy
+import random
 import time
 from multiprocessing import Process
 from random import shuffle
@@ -13,8 +14,13 @@ import os
 
 
 class Client(Process):
-    def __init__(self, client_internalId, clientsPerCuda, dataset, config, model, serverRound, flipboard, turnFlag, lrMem, sessionId, wandbQueue):
+    def __init__(self, client_internalId, clientsPerCuda, dataset, seed, config, model, serverRound, flipboard, turnFlag, lrMem, sessionId, wandbQueue):
         super().__init__()
+
+        torch.manual_seed(seed)
+        np.random.seed(seed)
+        random.seed(seed)
+
         self.device = None
         self.model = None
         self.optimizer = None
@@ -157,7 +163,7 @@ class Client(Process):
             key = f"client{self.client_internalId} validation loss"
             self.wandbQueue.put([key, avg_loss])
             # self.wandbClient.sendLog(key=f"client{self.client_internalId} validation loss", data=avg_loss)
-            print(f"Client {self.client_internalId} Validation Loss: {avg_loss:.4f} session validation accuracy: {acc}")
+            print(f"Client {self.client_internalId} Validation | Loss: {avg_loss:.4f} Accuracy: {acc}")
 
     def run(self):
 
@@ -175,6 +181,7 @@ class Client(Process):
         self.train(epochs=self.config['epoch'])
 
         torch.save(self.model.state_dict(), f'./server/receivedPth/{self.client_internalId}_round{self.round}.pth')
+        # torch.save(self.model.state_dict(), f'./util/clientModelLog/round{self.round}_id{self.client_internalId}.pth')
         self.validate()
         self.flipboard[self.client_internalId] = 1
 

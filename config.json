@@ -5,7 +5,8 @@
     "model": "custom CNN",
     "numClient" : 100,
     "clientsPerCuda": 5,
-    "updateClientsPerRound": 18
+    "updateClientsPerRound": 10,
+    "seed": 1234
   },
   "clients": [
     {

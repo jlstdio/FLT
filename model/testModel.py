@@ -6,20 +6,34 @@ import torch.nn as nn
 class testNN(nn.Module):
     def __init__(self):
         super(testNN, self).__init__()
-        self.conv1 = nn.Conv2d(in_channels=3, out_channels=32, kernel_size=3, padding=1)
-        self.conv2 = nn.Conv2d(in_channels=32, out_channels=64, kernel_size=3, padding=1)
-        self.fc1 = nn.Linear(64 * 32 * 32, 256)
-        self.fc2 = nn.Linear(256, 10)
+        self.conv1 = nn.Conv2d(3, 32, kernel_size=3)
+        self.pool = nn.MaxPool2d(kernel_size=2, stride=2)
+        self.conv2 = nn.Conv2d(32, 64, kernel_size=3)
+        self.conv3 = nn.Conv2d(64, 64, kernel_size=3)
         self.relu = nn.ReLU()
-        #self.dropout = nn.Dropout(0.5)
+        self.fc = nn.Linear(64 * 4 * 4, 10)  # 64는 채널 수, 4*4는 마지막 풀링 레이어의 출력 크기
         self.softmax = nn.Softmax(dim=1)
 
+        self._initialize_weights()  # He 초기화 함수 호출
+
+    def _initialize_weights(self):
+        for m in self.modules():
+            if isinstance(m, nn.Conv2d):
+                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0)
+            elif isinstance(m, nn.Linear):
+                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0)
+
     def forward(self, x):
-        x = self.relu(self.conv1(x))
-        x = self.relu(self.conv2(x))
+        x = self.relu(self.conv1(x))  # (None, 32, 30, 30)
+        x = self.pool(x)  # (None, 32, 15, 15)
+        x = self.relu(self.conv2(x))  # (None, 64, 13, 13)
+        x = self.pool(x)  # (None, 64, 6, 6)
+        x = self.relu(self.conv3(x))  # (None, 64, 4, 4)
         x = x.reshape(x.size(0), -1)
-        x = self.relu(self.fc1(x))
-        #x = self.dropout(x)
-        x = self.fc2(x)
-        x = self.softmax(x)
+        x = self.fc(x)  # (None, 10)
+        x = self.softmax(x)  # (None, 10)
         return x

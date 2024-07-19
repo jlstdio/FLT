@@ -8,12 +8,12 @@ def analyze_error_folder(error_folder):
     for file_name in os.listdir(error_folder):
         if file_name.endswith('.pth'):
             file_path = os.path.join(error_folder, file_name)
+            print(file_path)
             model = torch.load(file_path)
-
 
             for i in model:
                 print(f'layer name {i}')
-                # print(model[i])
+                print(model[i])
                 if torch.isnan(model[i]).any().item():
                     print(f"NaN found in {i} layer")
 

@@ -1,4 +1,5 @@
 import copy
+import random
 from multiprocessing import Process
 import os
 import time
@@ -8,6 +9,8 @@ from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 import torch
 from examinModel import examinModel
+from util.util import dltAllFiles
+
 
 class PTHFileHandler(FileSystemEventHandler):
     def __init__(self, server):
@@ -41,6 +44,11 @@ class Server(Process):
         self.pickedClientsList = pickedClientsList
         self.clientsList = [i for i in range(self.participants)]
         self.lastAcc = 0.0
+
+        self.seed = basicConfig['seed']
+        torch.manual_seed(self.seed)
+        np.random.seed(self.seed)
+        random.seed(self.seed)
 
         # mkdir
         self.pth_folder = os.path.abspath(os.path.join(os.path.dirname(__file__), ".", "receivedPth"))
@@ -85,7 +93,10 @@ class Server(Process):
         for filePath in pth_files:
             self.flModel.registerPth(filePath)
 
+        ## aggregating model
         self.rootModel = copy.deepcopy(self.flModel.aggregate())
+
+        ## saving model
         torch.save(self.rootModel.state_dict(), f'./server/aggregatedPth/root_round{self.currentRound.value}.pth')
         torch.save(self.rootModel.state_dict(), './server/rootModel/rootModel.pth')
 
@@ -97,11 +108,19 @@ class Server(Process):
         self.wandbQueue.put(["server aggregated accuracy", acc])
 
         # FL anomaly check
-        if -10.0 > acc - self.lastAcc:
+        '''
+        if -20.0 > acc - self.lastAcc:
             print(f'anomaly detected at {self.currentRound.value}')
-            torch.save(self.rootModel.state_dict(), f'../util/errorModel/rootModel_errored_at{self.currentRound.value}.pth')
+            torch.save(self.rootModel.state_dict(), f'./util/errorModel/rootModel_errored_at{self.currentRound.value}.pth')
             self.currentRound = self.targetRound + 1
             print('ejecting')
+        else:
+            dltAllFiles('./util/lastWorkingModel')
+            torch.save(self.rootModel.state_dict(),f'./util/lastWorkingModel/rootModel_at_{self.currentRound.value}.pth')
+        '''
+
+        dltAllFiles('./util/lastWorkingModel')
+        torch.save(self.rootModel.state_dict(), f'./util/lastWorkingModel/rootModel_at_{self.currentRound.value}.pth')
 
         self.lastAcc = acc
 
@@ -111,7 +130,7 @@ class Server(Process):
             self.turnFlag[i] = 0
             self.flipboard[i] = 1
 
-        # Delete all pth files
+        # Delete all received pth files
         for file in pth_files:
             os.remove(file)
 
