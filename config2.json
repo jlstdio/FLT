@@ -2,11 +2,15 @@
   "basicInfo" : {
     "projectName": "FLT",
     "dataset": "cifar-10",
-    "model": "custom CNN",
     "numClient" : 100,
-    "clientsPerCuda": 5,
+    "clientsPerCuda": 6,
     "updateClientsPerRound": 10,
-    "seed": 1234
+    "seed": 1234,
+    "startingCuda": 2,
+    "errorFilePath": "./util/errorModel_2",
+    "aggregateFilePath": "./server/aggregatedPth_2",
+    "receivedFilePath": "./server/receivedPth_2",
+    "rootModelFilePath": "./server/rootModel_2"
   },
   "clients": [
     {
@@ -17,13 +21,15 @@
       "ram": 300,
       "disk": 500,
       "memFrac": 0.01,
-      "learningRate": 0.25,
-      "lr_decay": 0.99,
+      "dataSetFrac" : 0.6,
+      "learningRate": 0.01,
+      "lr_decay_step": 1,
+      "lr_decay": 1.0,
       "momentum": 0.9,
-      "epoch": 5,
-      "batchSize": 100,
-      "iteration": 1000,
-      "costFunc": "BCELoss",
+      "epoch": 30,
+      "batchSize": 50,
+      "costFunc": "BCE loss",
+      "optim" : "SGD",
       "reg": "L2",
       "model": "testNN"
     },
@@ -36,11 +42,13 @@
       "disk": 500,
       "memFrac": 0.4,
       "learningRate": 0.002,
+      "lr_decay_step": 50,
+      "lr_decay": 0.7,
       "momentum": 0.8,
       "epoch": 15,
       "batchSize": 64,
-      "iteration": 1200,
-      "costFunc": "BCELoss",
+      "costFunc": "BCE loss",
+      "optim" : "SGD",
       "reg": "L1",
       "model": "testNN"
     },
@@ -53,17 +61,19 @@
       "disk": 500,
       "memFrac": 0.6,
       "learningRate": 0.0005,
+      "lr_decay_step": 50,
+      "lr_decay": 0.7,
       "momentum": 0.7,
       "epoch": 20,
       "batchSize": 16,
-      "iteration": 1500,
-      "costFunc": "MSELoss",
+      "costFunc": "BCE loss",
+      "optim" : "SGD",
       "reg": "L2",
       "model": "testNN"
     }
   ],
   "server": {
-    "flRound": 2000,
-    "examinData_batchSize": 100
+    "flRound": 3000,
+    "examinData_batchSize": 50
   }
 }

@@ -11,10 +11,12 @@ import torch
 
 
 class FLNetwork(Process):
-    def __init__(self, numClients, basicConfig, clientsDict, clientConfig, modelToLoad, wandbQueue):
+    def __init__(self, numClients, basicConfig, clientsDict, clientConfig, modelToLoad, startingCuda, wandbQueue):
         super(FLNetwork, self).__init__()
-        self.clientsPerCuda = basicConfig['clientsPerCuda']
+        self.basicConfig = basicConfig
+        self.clientsPerCuda = self.basicConfig['clientsPerCuda']
         self.serverRound = multiprocessing.Value('i', 0)
+        self.startingCuda = startingCuda
         self.lastRound = copy.deepcopy(self.serverRound.value)
         self.flipboard = multiprocessing.Array('i', range(numClients))
         self.turnFlag = multiprocessing.Array('i', range(numClients))
@@ -23,7 +25,7 @@ class FLNetwork(Process):
         self.lrMemory = multiprocessing.Array('d', range(numClients))
         self.clientsDict = clientsDict
         self.clientConfig = clientConfig
-        updateClientsPerRound = basicConfig['updateClientsPerRound']
+        updateClientsPerRound = self.basicConfig['updateClientsPerRound']
         self.pickedClientsList = multiprocessing.Array('i', range(updateClientsPerRound))
         self.modelToLoad = modelToLoad
         self.wandbQueue = wandbQueue
@@ -31,9 +33,9 @@ class FLNetwork(Process):
         for i in range(numClients):
             self.flipboard[i] = 1
             self.turnFlag[i] = 0
-            self.lrMemory[i] = 0.25
+            self.lrMemory[i] = clientConfig[0]['learningRate']
 
-        self.seed = basicConfig['seed']
+        self.seed = self.basicConfig['seed']
         torch.manual_seed(self.seed)
         np.random.seed(self.seed)
         random.seed(self.seed)
@@ -51,12 +53,14 @@ class FLNetwork(Process):
                    clientsPerCuda=self.clientsPerCuda,
                    dataset=self.clientsDict[i],
                    seed=self.seed,
+                   basicConfig=self.basicConfig,
                    config=self.clientConfig[0],
                    model=self.modelToLoad[i],
                    serverRound=self.serverRound,
                    flipboard=self.flipboard,
                    turnFlag=self.turnFlag,
                    lrMem=self.lrMemory,
+                   startingCuda=self.startingCuda,
                    sessionId=self.sessionId,
                    wandbQueue=self.wandbQueue)
             for i in self.pickedClientsList]

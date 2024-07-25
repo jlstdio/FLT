@@ -19,8 +19,8 @@ class examinModel:
         model_state_dict = torch.load(pthPath, map_location=self.device)  # torch.load(path, map_location=torch.device('cpu'))
         self.model.load_state_dict(model_state_dict)
         self.criterion = nn.BCELoss()
-
         # self.criterion = nn.CrossEntropyLoss()
+
         print(f"Examin device online")
         print(f'{self.device} available')
 
@@ -58,16 +58,16 @@ class examinModel:
                 inputs = inputs.to(self.device)
                 targets = targets.to(self.device)
                 outputs = self.model(inputs)
-                outputs_cpu = outputs.cpu()
-                targets_cpu = targets.cpu()
-                npOutputs = np.array(outputs_cpu)
-                npTargets = np.array(targets_cpu)
+
+                npOutputs = torch.argmax(outputs, dim=1)
+                npTargets = torch.argmax(targets, dim=1)
+                npOutputs = np.array(npOutputs.cpu())
+                npTargets = np.array(npTargets.cpu())
 
                 for i in range(len(npOutputs)):
-                    singleOutput = np.argmax(npOutputs[i])
-                    singleTarget = np.argmax(npTargets[i])
+                    singleOutput = npOutputs[i]
+                    singleTarget = npTargets[i]
 
-                    # print(f'length of ans: {singleOutput} target: {singleTarget}')
                     count += 1
                     if singleOutput == singleTarget:
                         acc += 1

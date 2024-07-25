@@ -23,12 +23,12 @@ class PTHFileHandler(FileSystemEventHandler):
 
 
 class Server(Process):
-    def __init__(self, rootModel, cudaId, flModel, examinDataset, serverConfig, basicConfig, currentRound, flipboard, turnFlag, sessionId, pickedClientsList, wandbQueue):
+    def __init__(self, rootModel, cudaId, flModel, examinDataset, serverConfig, basicConfig, currentRound, flipboard, turnFlag, sessionId, startingCuda, pickedClientsList, wandbQueue):
         super(Server, self).__init__()
         self.wandbQueue = wandbQueue
         self.serverConfig = serverConfig
         self.basicConfig = basicConfig
-        self.cudaId = cudaId
+        self.cudaId = cudaId + startingCuda
         self.targetRound = serverConfig['flRound']
         self.reservedRootModel = rootModel
         self.rootModel = None
@@ -51,12 +51,16 @@ class Server(Process):
         random.seed(self.seed)
 
         # mkdir
-        self.pth_folder = os.path.abspath(os.path.join(os.path.dirname(__file__), ".", "receivedPth"))
+        receivedPath = str(self.basicConfig['receivedFilePath'])
+        receivedPath = receivedPath.split('/')
+        self.pth_folder = os.path.abspath(os.path.join(os.path.dirname(__file__), ".", receivedPath[-1]))
+        print(self.pth_folder)
         os.makedirs(self.pth_folder, exist_ok=True)
 
         # root model init
+        rootModelPath = self.basicConfig['rootModelFilePath']
         self.rootModel = copy.deepcopy(self.reservedRootModel)
-        torch.save(self.rootModel.state_dict(), './server/rootModel/rootModel.pth')
+        torch.save(self.rootModel.state_dict(), f'{rootModelPath}/rootModel.pth')
         del self.rootModel
 
         print("Server online")
@@ -81,7 +85,6 @@ class Server(Process):
                         flag = True
 
                 time.sleep(1)
-
             self.run_FL()
 
     def run_FL(self):
@@ -97,15 +100,22 @@ class Server(Process):
         self.rootModel = copy.deepcopy(self.flModel.aggregate())
 
         ## saving model
-        torch.save(self.rootModel.state_dict(), f'./server/aggregatedPth/root_round{self.currentRound.value}.pth')
-        torch.save(self.rootModel.state_dict(), './server/rootModel/rootModel.pth')
+        rootModelPath = self.basicConfig['rootModelFilePath']
+        aggregatedModelPath = self.basicConfig['aggregateFilePath']
+        torch.save(self.rootModel.state_dict(), f'{aggregatedModelPath}/root_round{self.currentRound.value}.pth')
+        torch.save(self.rootModel.state_dict(), f'{rootModelPath}/rootModel.pth')
 
-        examinManager = examinModel(self.internalIdWithClients, self.cudaId, self.examinDataset, self.serverConfig['examinData_batchSize'], self.rootModel, './server/rootModel/rootModel.pth')
+        examinManager = examinModel(self.internalIdWithClients, self.cudaId, self.examinDataset, self.serverConfig['examinData_batchSize'], self.rootModel, f'{rootModelPath}/rootModel.pth')
         examinManager.loadData()
         loss, acc = examinManager.examin()
 
-        self.wandbQueue.put(["server aggregated validation loss", loss])
-        self.wandbQueue.put(["server aggregated accuracy", acc])
+        key = "server aggregated validation loss"
+        logList = [key, loss, self.currentRound.value]
+        self.wandbQueue.put(logList)
+
+        key = "server aggregated accuracy"
+        logList = [key, acc, self.currentRound.value]
+        self.wandbQueue.put(logList)
 
         # FL anomaly check
         '''
@@ -117,10 +127,10 @@ class Server(Process):
         else:
             dltAllFiles('./util/lastWorkingModel')
             torch.save(self.rootModel.state_dict(),f'./util/lastWorkingModel/rootModel_at_{self.currentRound.value}.pth')
-        '''
 
         dltAllFiles('./util/lastWorkingModel')
         torch.save(self.rootModel.state_dict(), f'./util/lastWorkingModel/rootModel_at_{self.currentRound.value}.pth')
+        '''
 
         self.lastAcc = acc
 
@@ -153,6 +163,7 @@ class Server(Process):
 
         for i in range(updateClientsPerRound):
             self.pickedClientsList[i] = pickedClients[i]
+
 
     def startFL(self):
         print('informing to clients')

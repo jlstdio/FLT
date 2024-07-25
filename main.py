@@ -37,12 +37,16 @@ cifar_dataloader = cifar10Dataloader(data_dir)
 
 if __name__ == "__main__":
 
-    dltAllFiles('./util/errorModel')
-    dltAllFiles('./server/aggregatedPth')
-    dltAllFiles('./server/receivedPth')
-    dltAllFiles('./server/rootModel')
+    startingCuda = int(input('type of configuration? : '))
+    configPath = None
 
-    configPath = './config.json'
+    if startingCuda == 1:
+        configPath = './config1.json'
+        startingCuda = 0
+    elif startingCuda == 2:
+        configPath = './config2.json'
+        startingCuda = 2
+
     with open(configPath, 'r') as file:
         config = json.load(file)
 
@@ -52,14 +56,19 @@ if __name__ == "__main__":
     numClients = basicConfig['numClient']
     updateClientsPerRound = basicConfig['updateClientsPerRound']
 
+    dltAllFiles(basicConfig['errorFilePath'])
+    dltAllFiles(basicConfig['aggregateFilePath'])
+    dltAllFiles(basicConfig['receivedFilePath'])
+    dltAllFiles(basicConfig['rootModelFilePath'])
+
     print('Count of using GPUs:', torch.cuda.device_count())
 
     trainDataset = zip(y_train, x_train)
     testDataset = zip(y_test[:1000], x_test[:1000])
     classes = list(set(y_train))
 
-    clientsDict = iidSplit(trainDataset, classes, round(len(y_train)/numClients), numClients)
-    # clientsDict = dirichletSplit(trainDataset, classes, 0.25, numClients)
+    # clientsDict = iidSplit(trainDataset, classes, round(len(y_train)/numClients), numClients)
+    clientsDict = dirichletSplit(trainDataset, classes, 0.25, numClients)
     # showDistribution(clientsDict, classes)
 
     multiprocessing.set_start_method('spawn')
@@ -79,6 +88,7 @@ if __name__ == "__main__":
                         clientsDict=clientsDict,
                         clientConfig=clientConfig,
                         modelToLoad=modelToLoad,
+                        startingCuda=startingCuda,
                         wandbQueue=wandbQueue)
 
     network.start()
@@ -95,6 +105,7 @@ if __name__ == "__main__":
                     flipboard=flipboard,
                     turnFlag=turnFlag,
                     sessionId=sessionId,
+                    startingCuda=startingCuda,
                     pickedClientsList=pickedClients,
                     wandbQueue=wandbQueue)
 

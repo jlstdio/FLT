@@ -15,7 +15,7 @@ Making experiment setup alot easier for FL/CL.
 - Major update alert : Whole system will be written using `Kubernetes`
 
 # Environment
-- python 3.10.0
+- Python 3.9.16
 - venv : required modules in requirements.txt
   - `pip install -r requirements.txt`
 
@@ -38,3 +38,7 @@ Making experiment setup alot easier for FL/CL.
 - 특정 device는 더 높은 epoch로 학습한 결과값
   - 더 높은 epoch로 학습한 client에 대해서 가중치 부여하는 상태로 실험해보기
   - 더 높은 epoch로 학습한 client에 대해서 가중치 부여하지 않은 상태로 실험해보기
+
+# Reference
+- [BCE loss VS CE loss](https://kim95175.tistory.com/26)
+- [Learning Rate Scheduler](https://wikidocs.net/157282)
