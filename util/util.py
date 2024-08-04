@@ -51,3 +51,23 @@ def dltAllFiles(path):
 def makeFile(idx):
     f = open(f"receivedPth/{idx}_file.pth", 'w')
     f.close()
+
+
+def clientTypeDistribution(clientTypeData, numClients):
+    result = []
+    types = []
+    for data in clientTypeData:
+        ratio = float(data.split(':')[1])
+        type_char = data.split(':')[0]
+        types.append(type_char)
+        count = int(numClients * ratio)
+        result += [type_char] * count
+
+    types = set(types)
+    remaining_slots = numClients - len(result)
+    for i in range(remaining_slots):
+        result.append(types[i % len(types)])
+
+    return result
+
+# print(clientTypeDistribution(['0:1.0'], 100))
