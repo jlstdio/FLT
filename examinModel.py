@@ -28,7 +28,7 @@ class examinModel:
     def loadData(self):
         '''
         dataset => {Data amount}
-        dataset[N] => (label : {1}, data : {32,32,3})
+        dataset[N] => (label : {1}, data : {32, 32, 3})
         '''
 
         validation_y, validation_x = zip(*self.dataset)
