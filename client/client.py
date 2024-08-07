@@ -173,6 +173,16 @@ class Client(Process):
 
         print(f"Client {self.client_internalId} with PID {os.getpid()} started.")
 
+        # 자신의 metadata 들어있는 파일 존재하는지 확인
+        metadataPath = self.basicConfig['clientsMetadataFolderPath'] + f"/client_{self.client_internalId}"
+
+        if os.path.exists(metadataPath):
+            # 최초 생성이 아님 -> file의 metadata 읽어들임
+            pass
+        else:
+            # 최초 생성 -> file의 metadata default로 지정하고 파일 읽음
+            pass
+
         self.round = self.serverRound.value
         self.model = copy.deepcopy(self.modelReserved)
         cudaId = self.sessionId[self.client_internalId] // self.clientsPerCuda

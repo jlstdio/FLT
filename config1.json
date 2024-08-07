@@ -11,7 +11,8 @@
     "errorFilePath": "./util/errorModel_1",
     "aggregateFilePath": "./server/aggregatedPth_1",
     "receivedFilePath": "./server/receivedPth_1",
-    "rootModelFilePath": "./server/rootModel_1"
+    "rootModelFilePath": "./server/rootModel_1",
+    "clientsMetadataFolderPath": "./client/clientsMemory"
   },
   "clients": [
     {
