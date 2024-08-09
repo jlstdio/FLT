@@ -1,4 +1,5 @@
 import copy
+import json
 import random
 import time
 from multiprocessing import Process
@@ -14,7 +15,7 @@ import os
 
 
 class Client(Process):
-    def __init__(self, client_internalId, clientsPerCuda, dataset, seed, basicConfig, config, model, serverRound, flipboard, turnFlag, lrMem, startingCuda, sessionId, wandbQueue):
+    def __init__(self, client_internalId, clientsPerCuda, dataset, seed, basicConfig, config, model, serverRound, flipboard, turnFlag, startingCuda, sessionId, wandbQueue):
         super().__init__()
 
         torch.manual_seed(seed)
@@ -35,14 +36,15 @@ class Client(Process):
         self.momentum = config['momentum']
         self.sessionId = sessionId
         self.turnFlag = turnFlag
-        self.lrMem = lrMem
-        self.learningRate = lrMem[client_internalId]
         self.client_internalId = client_internalId
         self.modelReserved = model
         self.round = 0
         self.wandbQueue = wandbQueue
         self.serverRound = serverRound
         self.clientsPerCuda = clientsPerCuda
+
+        self.metadataPath = self.basicConfig['clientsMetadataFolderPath'] + f"/client_{self.client_internalId}.json"
+        self.metaData = None
         '''
         # Wrap the model with DataParallel
         if torch.cuda.device_count() > 1:
@@ -105,8 +107,9 @@ class Client(Process):
         self.val_loader = DataLoader(val_dataset, batch_size=self.config['batchSize'], shuffle=True)
 
     def train(self, epochs=10):
-        self.optimizer = optim.SGD(self.model.parameters(), lr=self.learningRate)
-        print(f'client{self.client_internalId} lr at {self.learningRate}')
+        lr = self.metaData['lr']
+        self.optimizer = optim.SGD(self.model.parameters(), lr=lr)
+        print(f'client{self.client_internalId} lr at {lr}')
         self.model.train()
         for epoch in range(epochs):
             running_loss = 0.0
@@ -130,9 +133,8 @@ class Client(Process):
             # self.wandbClient.sendLog(key=f"client{self.client_internalId} training loss", data=avg_loss)
             # print(f"Client {self.client_internalId} Epoch [{epoch + 1}/{epochs}], Loss: {avg_loss:.4f}")
         if self.serverRound.value % self.config['lr_decay_step'] == 0 and self.serverRound.value != 0:
-            self.learningRate *= self.config['lr_decay']
-        self.learningRate = round(self.learningRate, 6)
-        self.lrMem[self.client_internalId] = copy.deepcopy(self.learningRate)
+            self.metaData['lr'] *= self.config['lr_decay']
+            self.metaData['lr'] = round(self.metaData['lr'])
 
     def validate(self):
         self.model.eval()
@@ -170,18 +172,30 @@ class Client(Process):
             print(f"Client {self.client_internalId} Validation | Loss: {avg_loss:.4f} Accuracy: {acc}")
 
     def run(self):
-
         print(f"Client {self.client_internalId} with PID {os.getpid()} started.")
+        default_metadata = None
 
-        # 자신의 metadata 들어있는 파일 존재하는지 확인
-        metadataPath = self.basicConfig['clientsMetadataFolderPath'] + f"/client_{self.client_internalId}"
-
-        if os.path.exists(metadataPath):
+        if os.path.exists(self.metadataPath):
             # 최초 생성이 아님 -> file의 metadata 읽어들임
-            pass
+            with open(self.metadataPath, 'r') as file:
+                self.metaData = json.load(file)['clientMetadata']
         else:
             # 최초 생성 -> file의 metadata default로 지정하고 파일 읽음
-            pass
+            default_metadata = {
+                "clientMetadata": {}
+            }
+
+            # default_metadata에 필요한 key와 값을 추가
+            default_metadata["clientMetadata"]["delayMax"] = self.config['delayMax']
+            default_metadata["clientMetadata"]["earlyMax"] = self.config['earlyMax']
+            default_metadata["clientMetadata"]["lr"] = self.config['learningRate']
+            default_metadata["clientMetadata"]["epoch"] = self.config['epoch']
+            default_metadata["clientMetadata"]["batchSize"] = self.config['batchSize']
+
+            with open(self.metadataPath, 'w') as file:
+                json.dump(default_metadata, file, indent=4)
+
+            self.metaData = default_metadata['clientMetadata']
 
         self.round = self.serverRound.value
         self.model = copy.deepcopy(self.modelReserved)
@@ -201,5 +215,9 @@ class Client(Process):
         # torch.save(self.model.state_dict(), f'./util/clientModelLog/round{self.round}_id{self.client_internalId}.pth')
         self.validate()
         self.flipboard[self.client_internalId] = 1
+
+        with open(self.metadataPath, 'w') as file:
+            default_metadata['clientMetadata'] = self.metaData
+            json.dump(default_metadata, file, indent=4)
 
         print(f"Client {self.client_internalId} finished training round {self.round}")

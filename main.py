@@ -60,6 +60,7 @@ if __name__ == "__main__":
     dltAllFiles(basicConfig['aggregateFilePath'])
     dltAllFiles(basicConfig['receivedFilePath'])
     dltAllFiles(basicConfig['rootModelFilePath'])
+    dltAllFiles(basicConfig['clientsMetadataFolderPath'])
 
     print('Count of using GPUs:', torch.cuda.device_count())
 
