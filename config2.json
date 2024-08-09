@@ -2,20 +2,39 @@
   "basicInfo" : {
     "projectName": "FLT",
     "dataset": "cifar-10",
-    "numClient" : 80,
-    "clientsPerCuda": 5,
-    "updateClientsPerRound": 8,
+    "numClient" : 100,
+    "clientsPerCuda": 4,
+    "updateClientsPerRound": 10,
     "seed": 1234,
-    "startingCuda": 2,
-    "participantsInfo": "1:1.0",
-    "errorFilePath": "./util/errorModel_2",
-    "aggregateFilePath": "./server/aggregatedPth_2",
-    "receivedFilePath": "./server/receivedPth_2",
-    "rootModelFilePath": "./server/rootModel_2"
+    "startingCuda": 0,
+    "participantsInfo": "0:0.3|1:0.3|2:0.4",
+    "errorFilePath": "./util/errorModel_1",
+    "aggregateFilePath": "./server/aggregatedPth_1",
+    "receivedFilePath": "./server/receivedPth_1",
+    "rootModelFilePath": "./server/rootModel_1",
+    "clientsMetadataFolderPath": "./client/clientsMemory_2"
+  },
+  "networkConfig" : {
+    "rate" : {
+      "PenaltyRate" : 0.7,
+      "RewardRate" : 0.4
+    },
+    "epoch" : {
+      "PenaltyValue" : -2,
+      "RewardValue" : 4
+    },
+    "batchSize" : {
+      "PenaltyValue" : -10,
+      "RewardValue" : 20
+    },
+    "dataSize" : {
+      "PenaltyValue" : -10,
+      "RewardValue" : 20
+    }
   },
   "clients": [
     {
-      "type": "A",
+      "type": "fastest edge",
       "gpuClk": 1.0,
       "vram": 300,
       "cpuClk": 1.0,
@@ -27,16 +46,19 @@
       "lr_decay_step": 1,
       "lr_decay": 1.0,
       "momentum": 0.9,
-      "epoch": 30,
+      "epoch": 10,
       "batchSize": 30,
       "iteration": 1000,
+      "delayMin": 0,
+      "delayMax": 0.1,
+      "dataSize" : 1.0,
       "costFunc": "BCE loss",
       "optim" : "SGD",
       "reg": "L2",
       "model": "testNN"
     },
     {
-      "type": "B",
+      "type": "middle spec edge",
       "gpuClk": 1.0,
       "vram": 300,
       "cpuClk": 1.0,
@@ -51,13 +73,16 @@
       "epoch": 10,
       "batchSize": 30,
       "iteration": 1000,
+      "delayMin": 0.1,
+      "delayMax": 0.2,
+      "dataSize" : 1.0,
       "costFunc": "BCE loss",
       "optim" : "SGD",
       "reg": "L2",
       "model": "testNN"
     },
     {
-      "type": "C",
+      "type": "low spec edge",
       "gpuClk": 1.0,
       "vram": 300,
       "cpuClk": 1.0,
@@ -69,9 +94,12 @@
       "lr_decay_step": 1,
       "lr_decay": 1.0,
       "momentum": 0.9,
-      "epoch": 30,
-      "batchSize": 50,
+      "epoch": 10,
+      "batchSize": 30,
       "iteration": 1000,
+      "delayMin": 1,
+      "delayMax": 3,
+      "dataSize" : 1.0,
       "costFunc": "BCE loss",
       "optim" : "SGD",
       "reg": "L2",

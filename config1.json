@@ -11,7 +11,26 @@
     "errorFilePath": "./util/errorModel_1",
     "aggregateFilePath": "./server/aggregatedPth_1",
     "receivedFilePath": "./server/receivedPth_1",
-    "rootModelFilePath": "./server/rootModel_1"
+    "rootModelFilePath": "./server/rootModel_1",
+    "clientsMetadataFolderPath": "./client/clientsMemory_1"
+  },
+  "networkConfig" : {
+    "rate" : {
+      "PenaltyRate" : 0.7,
+      "RewardRate" : 0.4
+    },
+    "epoch" : {
+      "PenaltyValue" : -2,
+      "RewardValue" : 4
+    },
+    "batchSize" : {
+      "PenaltyValue" : -10,
+      "RewardValue" : 20
+    },
+    "dataSize" : {
+      "PenaltyValue" : -10,
+      "RewardValue" : 20
+    }
   },
   "clients": [
     {
@@ -27,11 +46,12 @@
       "lr_decay_step": 1,
       "lr_decay": 1.0,
       "momentum": 0.9,
-      "epoch": 10,
+      "epoch": 20,
       "batchSize": 30,
       "iteration": 1000,
       "delayMin": 0,
       "delayMax": 0.1,
+      "dataSize" : 1.0,
       "costFunc": "BCE loss",
       "optim" : "SGD",
       "reg": "L2",
@@ -50,11 +70,12 @@
       "lr_decay_step": 1,
       "lr_decay": 1.0,
       "momentum": 0.9,
-      "epoch": 10,
+      "epoch": 20,
       "batchSize": 30,
       "iteration": 1000,
       "delayMin": 0.1,
       "delayMax": 0.2,
+      "dataSize" : 1.0,
       "costFunc": "BCE loss",
       "optim" : "SGD",
       "reg": "L2",
@@ -73,11 +94,12 @@
       "lr_decay_step": 1,
       "lr_decay": 1.0,
       "momentum": 0.9,
-      "epoch": 10,
+      "epoch": 20,
       "batchSize": 30,
       "iteration": 1000,
       "delayMin": 1,
       "delayMax": 3,
+      "dataSize" : 1.0,
       "costFunc": "BCE loss",
       "optim" : "SGD",
       "reg": "L2",
