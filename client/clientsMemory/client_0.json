@@ -1,9 +1,0 @@
-{
-  "clientMetadata": {
-    "delayMax" : 1,
-    "earlyMax" : -1,
-    "lr" : 0.01,
-    "epoch" : 10,
-    "batchSize" : 10
-  }
-}

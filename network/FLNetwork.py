@@ -13,7 +13,7 @@ from util.util import clientTypeDistribution
 
 
 class FLNetwork(Process):
-    def __init__(self, numClients, basicConfig, clientsDict, clientConfig, modelToLoad, startingCuda, wandbQueue):
+    def __init__(self, numClients, basicConfig, clientsDict, clientConfig, networkConfig, modelToLoad, startingCuda, wandbQueue):
         super(FLNetwork, self).__init__()
         self.basicConfig = basicConfig
         self.clientsPerCuda = self.basicConfig['clientsPerCuda']
@@ -24,12 +24,14 @@ class FLNetwork(Process):
         self.turnFlag = multiprocessing.Array('i', range(numClients))
         self.sessionId = multiprocessing.Array('i', range(numClients))
         self.turnFlag = multiprocessing.Array('i', range(numClients))
+        self.finishRate = multiprocessing.Value('d', 0.0)
         self.clientsDict = clientsDict
         self.clientConfig = clientConfig
         updateClientsPerRound = self.basicConfig['updateClientsPerRound']
         self.pickedClientsList = multiprocessing.Array('i', range(updateClientsPerRound))
         self.modelToLoad = modelToLoad
         self.wandbQueue = wandbQueue
+        self.networkConfig = networkConfig
         self.clientTypeData = []
         self.typesPerClients = []
 
@@ -64,6 +66,7 @@ class FLNetwork(Process):
                        clientsPerCuda=self.clientsPerCuda,
                        dataset=self.clientsDict[i],
                        seed=self.seed,
+                       networkConfig=self.networkConfig,
                        basicConfig=self.basicConfig,
                        config=self.clientConfig[int(self.typesPerClients[i])],
                        model=self.modelToLoad[i],

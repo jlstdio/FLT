@@ -15,7 +15,7 @@ import os
 
 
 class Client(Process):
-    def __init__(self, client_internalId, clientsPerCuda, dataset, seed, basicConfig, config, model, serverRound, flipboard, turnFlag, startingCuda, sessionId, wandbQueue):
+    def __init__(self, client_internalId, clientsPerCuda, dataset, seed, networkConfig, basicConfig, config, model, serverRound, flipboard, turnFlag, startingCuda, sessionId, wandbQueue):
         super().__init__()
 
         torch.manual_seed(seed)
@@ -32,6 +32,7 @@ class Client(Process):
         self.train_loader = None
         self.dataset = dataset
         self.basicConfig = basicConfig
+        self.networkConfig = networkConfig
         self.config = config
         self.momentum = config['momentum']
         self.sessionId = sessionId
@@ -41,6 +42,7 @@ class Client(Process):
         self.round = 0
         self.wandbQueue = wandbQueue
         self.serverRound = serverRound
+        self.finishRate = 0.0
         self.clientsPerCuda = clientsPerCuda
 
         self.metadataPath = self.basicConfig['clientsMetadataFolderPath'] + f"/client_{self.client_internalId}.json"
@@ -103,11 +105,12 @@ class Client(Process):
         train_dataset = TensorDataset(X_train, y_train)
         val_dataset = TensorDataset(X_val, y_val)
 
-        self.train_loader = DataLoader(train_dataset, batch_size=self.config['batchSize'], shuffle=True)
-        self.val_loader = DataLoader(val_dataset, batch_size=self.config['batchSize'], shuffle=True)
+        self.train_loader = DataLoader(train_dataset, batch_size=self.metaData['batchSize'], shuffle=True)
+        self.val_loader = DataLoader(val_dataset, batch_size=self.metaData['batchSize'], shuffle=True)
 
     def train(self, epochs=10):
         lr = self.metaData['lr']
+        logList = None
         self.optimizer = optim.SGD(self.model.parameters(), lr=lr)
         print(f'client{self.client_internalId} lr at {lr}')
         self.model.train()
@@ -126,15 +129,25 @@ class Client(Process):
                 running_loss += loss.item()
 
             avg_loss = running_loss / len(self.train_loader)
-            key = f"client{self.client_internalId} training loss"
+            key = f"client/performance/client{self.client_internalId} training loss"
 
             logList = [key, avg_loss, self.round]
-            self.wandbQueue.put(logList)
+            # self.wandbQueue.put(logList)
+
+            # Intended delay -> to simulate device latency
+            delayMin = round(self.metaData['delayMin'], 3)
+            delayMax = round(self.metaData['delayMax'], 3)
+            randTime = random.uniform(delayMin, delayMax)
+            time.sleep(randTime)
+
             # self.wandbClient.sendLog(key=f"client{self.client_internalId} training loss", data=avg_loss)
             # print(f"Client {self.client_internalId} Epoch [{epoch + 1}/{epochs}], Loss: {avg_loss:.4f}")
         if self.serverRound.value % self.config['lr_decay_step'] == 0 and self.serverRound.value != 0:
-            self.metaData['lr'] *= self.config['lr_decay']
-            self.metaData['lr'] = round(self.metaData['lr'])
+            lr *= self.config['lr_decay']
+
+        self.metaData['lr'] = round(lr, 6)
+
+        return logList
 
     def validate(self):
         self.model.eval()
@@ -164,7 +177,7 @@ class Client(Process):
             acc /= count
             acc *= 100.0
 
-            key = f"client{self.client_internalId} validation loss"
+            key = f"client/performance/client{self.client_internalId} validation loss"
             logList = [key, avg_loss, self.round]
             self.wandbQueue.put(logList)
 
@@ -173,7 +186,9 @@ class Client(Process):
 
     def run(self):
         print(f"Client {self.client_internalId} with PID {os.getpid()} started.")
-        default_metadata = None
+        default_metadata = {
+            "clientMetadata": {}
+        }
 
         if os.path.exists(self.metadataPath):
             # 최초 생성이 아님 -> file의 metadata 읽어들임
@@ -181,16 +196,14 @@ class Client(Process):
                 self.metaData = json.load(file)['clientMetadata']
         else:
             # 최초 생성 -> file의 metadata default로 지정하고 파일 읽음
-            default_metadata = {
-                "clientMetadata": {}
-            }
 
             # default_metadata에 필요한 key와 값을 추가
             default_metadata["clientMetadata"]["delayMax"] = self.config['delayMax']
-            default_metadata["clientMetadata"]["earlyMax"] = self.config['earlyMax']
+            default_metadata["clientMetadata"]["delayMin"] = self.config['delayMin']
             default_metadata["clientMetadata"]["lr"] = self.config['learningRate']
             default_metadata["clientMetadata"]["epoch"] = self.config['epoch']
             default_metadata["clientMetadata"]["batchSize"] = self.config['batchSize']
+            default_metadata["clientMetadata"]["dataSize"] = 100
 
             with open(self.metadataPath, 'w') as file:
                 json.dump(default_metadata, file, indent=4)
@@ -208,7 +221,53 @@ class Client(Process):
         model_state_dict = torch.load(rootModelPath, map_location=self.device)
         self.model.load_state_dict(model_state_dict)
         self.model = self.model.to(self.device)
-        self.train(epochs=self.config['epoch'])
+
+        # train
+        logList = self.train(epochs=self.metaData['epoch'])
+
+        file_list = os.listdir(self.basicConfig['receivedFilePath'])
+        file_count = len(file_list) + 1
+        self.finishRate = file_count / self.basicConfig['updateClientsPerRound']
+
+        # additional train rule
+        # TODO : move this function to clientUtil.py
+        if self.finishRate < self.networkConfig['rate']['RewardRate']:
+            # assume that this device has better resource environment
+            print(f'Client {self.client_internalId} is faster than others, performing additional train {self.finishRate}')
+            self.metaData['epoch'] += self.networkConfig['epoch']['RewardValue']
+
+            logList = self.train(epochs=self.networkConfig['epoch']['RewardValue'])
+
+        elif self.finishRate > self.networkConfig['rate']['PenaltyRate']:
+            # assume that this device is in limited resource environment
+            self.metaData['epoch'] += self.networkConfig['epoch']['PenaltyValue']
+            print(f'Client {self.client_internalId} is worse than others, not performing additional train {self.finishRate}')
+
+        else:
+            print(f'Client {self.client_internalId} has intermediate performance not performing additional train {self.finishRate}')
+
+        if self.metaData['epoch'] < 5:
+            self.metaData['epoch'] = 5
+
+        print(f'Next time client {self.client_internalId} will perform ' + str(self.metaData['epoch']) + ' epochs')
+        self.wandbQueue.put(logList)
+
+        # update meta-data of client hyper parameter
+        ## epoch
+        key = f"client/metadata/client{self.client_internalId} epoch"
+        hyperparamLogList = [key, self.metaData['epoch'], self.round]
+        self.wandbQueue.put(hyperparamLogList)
+
+        ## batchSize
+        key = f"client/metadata/client{self.client_internalId} batchSize"
+        hyperparamLogList = [key, self.metaData['batchSize'], self.round]
+        self.wandbQueue.put(hyperparamLogList)
+
+        ## dataSize
+        key = f"client/metadata/client{self.client_internalId} dataSize"
+        hyperparamLogList = [key, self.metaData['dataSize'], self.round]
+        self.wandbQueue.put(hyperparamLogList)
+
 
         clientModelToServer = self.basicConfig['receivedFilePath']
         torch.save(self.model.state_dict(), f'{clientModelToServer}/{self.client_internalId}_round{self.round}.pth')

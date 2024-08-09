@@ -44,6 +44,7 @@ class Server(Process):
         self.pickedClientsList = pickedClientsList
         self.clientsList = [i for i in range(self.participants)]
         self.lastAcc = 0.0
+        self.numOfReceivedClients = 0
 
         self.seed = basicConfig['seed']
         torch.manual_seed(self.seed)
@@ -109,15 +110,15 @@ class Server(Process):
         examinManager.loadData()
         loss, acc = examinManager.examin()
 
-        key = "server aggregated validation loss"
+        key = "server/performance/server aggregated validation loss"
         logList = [key, loss, self.currentRound.value]
         self.wandbQueue.put(logList)
 
-        key = "server aggregated accuracy"
+        key = "server/performance/server aggregated accuracy"
         logList = [key, acc, self.currentRound.value]
         self.wandbQueue.put(logList)
 
-        # FL anomaly check
+        ## FL anomaly check
         '''
         if -20.0 > acc - self.lastAcc:
             print(f'anomaly detected at {self.currentRound.value}')

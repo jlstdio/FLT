@@ -53,6 +53,7 @@ if __name__ == "__main__":
     clientConfig = config['clients']
     serverConfig = config['server']
     basicConfig = config['basicInfo']
+    networkConfig = config['networkConfig']
     numClients = basicConfig['numClient']
     updateClientsPerRound = basicConfig['updateClientsPerRound']
 
@@ -88,6 +89,7 @@ if __name__ == "__main__":
                         basicConfig=basicConfig,
                         clientsDict=clientsDict,
                         clientConfig=clientConfig,
+                        networkConfig=networkConfig,
                         modelToLoad=modelToLoad,
                         startingCuda=startingCuda,
                         wandbQueue=wandbQueue)
