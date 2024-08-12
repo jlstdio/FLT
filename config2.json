@@ -12,7 +12,8 @@
     "aggregateFilePath": "./server/aggregatedPth_1",
     "receivedFilePath": "./server/receivedPth_1",
     "rootModelFilePath": "./server/rootModel_1",
-    "clientsMetadataFolderPath": "./client/clientsMemory_2"
+    "clientsMetadataFolderPath": "./client/clientsMemory_2",
+    "enable_flid": true
   },
   "networkConfig" : {
     "rate" : {
