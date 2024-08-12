@@ -129,9 +129,10 @@ class Client(Process):
                 running_loss += loss.item()
 
             avg_loss = running_loss / len(self.train_loader)
-            key = f"client/performance/client{self.client_internalId} training loss"
+            key_loss = f"client/performance/train/loss/client{self.client_internalId} training loss"
+            # key_acc = f"client/performance/train/accuracy/client{self.client_internalId} validation accuracy"
 
-            logList = [key, avg_loss, self.round]
+            logList = [key_loss, avg_loss, self.round]
             # self.wandbQueue.put(logList)
 
             # Intended delay -> to simulate device latency
@@ -177,9 +178,13 @@ class Client(Process):
             acc /= count
             acc *= 100.0
 
-            key = f"client/performance/client{self.client_internalId} validation loss"
-            logList = [key, avg_loss, self.round]
-            self.wandbQueue.put(logList)
+            key_loss = f"client/performance/validation/loss/client{self.client_internalId} training loss"
+            key_acc = f"client/performance/validation/accuracy/client{self.client_internalId} training accuracy"
+
+            logList_train_loss = [key_loss, avg_loss, self.round]
+            logList_train_acc = [key_acc, acc, self.round]
+            self.wandbQueue.put(logList_train_loss)
+            self.wandbQueue.put(logList_train_acc)
 
             # self.wandbClient.sendLog(key=f"client{self.client_internalId} validation loss", data=avg_loss)
             print(f"Client {self.client_internalId} Validation | Loss: {avg_loss:.4f} Accuracy: {acc}")
@@ -203,7 +208,7 @@ class Client(Process):
             default_metadata["clientMetadata"]["lr"] = self.config['learningRate']
             default_metadata["clientMetadata"]["epoch"] = self.config['epoch']
             default_metadata["clientMetadata"]["batchSize"] = self.config['batchSize']
-            default_metadata["clientMetadata"]["dataSize"] = 100
+            default_metadata["clientMetadata"]["dataSize"] = self.config['dataSetFrac'] # default 0.9
 
             with open(self.metadataPath, 'w') as file:
                 json.dump(default_metadata, file, indent=4)
@@ -222,49 +227,55 @@ class Client(Process):
         self.model.load_state_dict(model_state_dict)
         self.model = self.model.to(self.device)
 
-        # train
+        ## train
         logList = self.train(epochs=self.metaData['epoch'])
 
         file_list = os.listdir(self.basicConfig['receivedFilePath'])
         file_count = len(file_list) + 1
         self.finishRate = file_count / self.basicConfig['updateClientsPerRound']
 
-        # additional train rule
-        # TODO : move this function to clientUtil.py
-        if self.finishRate < self.networkConfig['rate']['RewardRate']:
-            # assume that this device has better resource environment
-            print(f'Client {self.client_internalId} is faster than others, performing additional train {self.finishRate}')
-            self.metaData['epoch'] += self.networkConfig['epoch']['RewardValue']
 
-            logList = self.train(epochs=self.networkConfig['epoch']['RewardValue'])
+        if self.basicConfig['enable_flid']:
+            ## additional train rule
+            # TODO : move this function to clientUtil.py
+            if self.finishRate < self.networkConfig['rate']['RewardRate']:
+                # assume that this device has better resource environment
+                print(f'Client {self.client_internalId} is faster than others, performing additional train {self.finishRate}')
+                self.metaData['epoch'] += self.networkConfig['epoch']['RewardValue']
 
-        elif self.finishRate > self.networkConfig['rate']['PenaltyRate']:
-            # assume that this device is in limited resource environment
-            self.metaData['epoch'] += self.networkConfig['epoch']['PenaltyValue']
-            print(f'Client {self.client_internalId} is worse than others, not performing additional train {self.finishRate}')
+                logList = self.train(epochs=self.networkConfig['epoch']['RewardValue'])
 
-        else:
-            print(f'Client {self.client_internalId} has intermediate performance not performing additional train {self.finishRate}')
+            elif self.finishRate > self.networkConfig['rate']['PenaltyRate']:
+                # assume that this device is in limited resource environment
+                self.metaData['epoch'] += self.networkConfig['epoch']['PenaltyValue']
+                print(f'Client {self.client_internalId} is worse than others, not performing additional train {self.finishRate}')
 
-        if self.metaData['epoch'] < 5:
-            self.metaData['epoch'] = 5
+            else:
+                print(f'Client {self.client_internalId} has intermediate performance not performing additional train {self.finishRate}')
+
+            ## meta data upper & lower bound setting
+            if self.metaData['epoch'] < 5:
+                self.metaData['epoch'] = 5
+
+            elif self.metaData['epoch'] > 50:
+                self.metaData['epoch'] = 50
 
         print(f'Next time client {self.client_internalId} will perform ' + str(self.metaData['epoch']) + ' epochs')
         self.wandbQueue.put(logList)
 
         # update meta-data of client hyper parameter
         ## epoch
-        key = f"client/metadata/client{self.client_internalId} epoch"
+        key = f"client/metadata/epoch/client{self.client_internalId} epoch"
         hyperparamLogList = [key, self.metaData['epoch'], self.round]
         self.wandbQueue.put(hyperparamLogList)
 
         ## batchSize
-        key = f"client/metadata/client{self.client_internalId} batchSize"
+        key = f"client/metadata/batchsize/client{self.client_internalId} batchSize"
         hyperparamLogList = [key, self.metaData['batchSize'], self.round]
         self.wandbQueue.put(hyperparamLogList)
 
         ## dataSize
-        key = f"client/metadata/client{self.client_internalId} dataSize"
+        key = f"client/metadata/datasize/client{self.client_internalId} dataSize"
         hyperparamLogList = [key, self.metaData['dataSize'], self.round]
         self.wandbQueue.put(hyperparamLogList)
 

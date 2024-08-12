@@ -10,15 +10,21 @@ class wandbClient(Process):
         basicConfig = config['basicInfo']
         self.wandbClient = wandb.init(project=basicConfig['projectName'],config=config)
         self.wandbClient.define_metric("custom_step")
+        self.wandbClient.define_metric("time")
         self.registerClientMetric("server/performance/server aggregated validation loss")
         self.registerClientMetric("server/performance/server aggregated accuracy")
         print('wandb client online')
 
         for i in range(int(basicConfig['numClient'])):
-            self.registerClientMetric(f"client/performance/client{i} validation loss")
-            self.registerClientMetric(f"client/metadata/client{i} epoch")
-            self.registerClientMetric(f"client/metadata/client{i} dataSize")
-            self.registerClientMetric(f"client/metadata/client{i} batchSize")
+            self.registerClientMetric(f"client/performance/train/loss/client{i} training loss")
+            self.registerClientMetric(f"client/performance/train/accuracy/client{i} training accuracy")
+
+            self.registerClientMetric(f"client/performance/validation/loss/client{i} validation loss")
+            self.registerClientMetric(f"client/performance/validation/accuracy/client{i} validation accuracy")
+
+            self.registerClientMetric(f"client/metadata/epoch/client{i} epoch")
+            self.registerClientMetric(f"client/metadata/datasize/client{i} dataSize")
+            self.registerClientMetric(f"client/metadata/batchsize/client{i} batchSize")
 
     def registerClientMetric(self, key):
         self.wandbClient.define_metric(key, step_metric="custom_step")
