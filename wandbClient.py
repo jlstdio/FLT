@@ -8,11 +8,13 @@ class wandbClient(Process):
         super().__init__()
         self.q = multiprocessing.Queue()
         basicConfig = config['basicInfo']
+        clientConfig = config['clients']
         self.wandbClient = wandb.init(project=basicConfig['projectName'],config=config)
         self.wandbClient.define_metric("custom_step")
         self.wandbClient.define_metric("time")
         self.registerClientMetric("server/performance/server aggregated validation loss")
         self.registerClientMetric("server/performance/server aggregated accuracy")
+        self.registerClientMetric("server/performance/server round time")
         print('wandb client online')
 
         for i in range(int(basicConfig['numClient'])):
@@ -22,9 +24,22 @@ class wandbClient(Process):
             self.registerClientMetric(f"client/performance/validation/loss/client{i} validation loss")
             self.registerClientMetric(f"client/performance/validation/accuracy/client{i} validation accuracy")
 
+            self.registerClientMetric(f"client/performance/trainTime/lastTrainTime/client{i} lastTrainTime")
+            self.registerClientMetric(f"client/performance/trainTime/avgTrainTime/client{i} avgTrainTime")
+
+            self.registerClientMetric(f"client/performance/pre-validation/loss/client{i} training loss")
+            self.registerClientMetric(f"client/performance/pre-validation/accuracy/client{i} training accuracy")
+
+            self.registerClientMetric(f"client/efficiency/waitingTime/client{i} waiting time")
+
             self.registerClientMetric(f"client/metadata/epoch/client{i} epoch")
             self.registerClientMetric(f"client/metadata/datasize/client{i} dataSize")
             self.registerClientMetric(f"client/metadata/batchsize/client{i} batchSize")
+
+        for typeNum in range(len(clientConfig)):
+            self.registerClientMetric(f"clientType/performance/validation/loss/client type{typeNum} validation loss")
+            self.registerClientMetric(f"clientType/performance/validation/accuracy/client type{typeNum} validation accuracy")
+            self.registerClientMetric(f"clientType/efficiency/waitingTime/client type{typeNum} avg waiting time")
 
     def registerClientMetric(self, key):
         self.wandbClient.define_metric(key, step_metric="custom_step")
