@@ -6,7 +6,7 @@ from random import shuffle
 import numpy as np
 from client.client import Client
 from dataPrepare.iid import iidSplit
-from dataPrepare.noniid import dirichletSplit
+from dataPrepare.noniid import dirichletSplit, noniid_dirichlet_equal_split
 from dataset.cifar10.cifar10DataLoader import cifar10Dataloader
 from dataset.mnist.mnistDataLoader import mnistDataloader
 # from model.resnet50 import resNet50
@@ -58,10 +58,11 @@ if __name__ == "__main__":
     updateClientsPerRound = basicConfig['updateClientsPerRound']
 
     dltAllFiles(basicConfig['errorFilePath'])
-    dltAllFiles(basicConfig['aggregateFilePath'])
-    dltAllFiles(basicConfig['receivedFilePath'])
+    dltAllFiles(basicConfig['receivedPthPath'])
+    dltAllFiles(basicConfig['receivedDataPath'])
     dltAllFiles(basicConfig['rootModelFilePath'])
     dltAllFiles(basicConfig['clientsMetadataFolderPath'])
+    dltAllFiles(basicConfig['receivedProfilePath'])
 
     print('Count of using GPUs:', torch.cuda.device_count())
 
@@ -70,8 +71,8 @@ if __name__ == "__main__":
     classes = list(set(y_train))
 
     # clientsDict = iidSplit(trainDataset, classes, round(len(y_train)/numClients), numClients)
-    clientsDict = dirichletSplit(trainDataset, classes, 0.25, numClients)
-    # showDistribution(clientsDict, classes)
+    clientsDict = noniid_dirichlet_equal_split(trainDataset, classes, 0.25, numClients)
+    showDistribution(clientsDict, classes)
 
     multiprocessing.set_start_method('spawn')
     clientsPerCuda = basicConfig['clientsPerCuda']

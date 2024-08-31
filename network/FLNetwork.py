@@ -36,6 +36,7 @@ class FLNetwork(Process):
         self.typesPerClients = []
 
         clientTypeDataStr = str(basicConfig['participantsInfo']).split('|')  # "A:0.5|B:0.5"
+
         for strInfo in clientTypeDataStr:
             self.clientTypeData.append(strInfo)
 
@@ -68,6 +69,7 @@ class FLNetwork(Process):
                        seed=self.seed,
                        networkConfig=self.networkConfig,
                        basicConfig=self.basicConfig,
+                       clientType=self.typesPerClients[i],
                        config=self.clientConfig[int(self.typesPerClients[i])],
                        model=self.modelToLoad[i],
                        serverRound=self.serverRound,

@@ -26,6 +26,7 @@ def showDistribution(clientsDict, classes):
 
     plt.tight_layout()
     plt.show()
+    # plt.savefig('test.pdf')
 
 
 # state_dict에서 'module.' 제거하는 함수
