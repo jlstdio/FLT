@@ -6,7 +6,7 @@ from random import shuffle
 import numpy as np
 from client.client import Client
 from dataPrepare.iid import iidSplit
-from dataPrepare.noniid import dirichletSplit, noniid_dirichlet_equal_split
+from dataPrepare.noniid import *
 from dataset.cifar10.cifar10DataLoader import cifar10Dataloader
 from dataset.mnist.mnistDataLoader import mnistDataloader
 # from model.resnet50 import resNet50
@@ -71,7 +71,8 @@ if __name__ == "__main__":
     classes = list(set(y_train))
 
     # clientsDict = iidSplit(trainDataset, classes, round(len(y_train)/numClients), numClients)
-    clientsDict = noniid_dirichlet_equal_split(trainDataset, classes, 0.25, numClients)
+    clientsDict = dirichlet_equal_split(trainDataset, classes, 0.25, numClients)
+    # print(len(clientsDict[0]))
     showDistribution(clientsDict, classes)
 
     multiprocessing.set_start_method('spawn')
