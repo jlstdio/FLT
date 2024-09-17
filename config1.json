@@ -6,7 +6,7 @@
     "clientsPerCuda": 6,
     "updateClientsPerRound": 10,
     "seed": 1234,
-    "startingCuda": 2,
+    "startingCuda": 0,
     "participantsInfo": "0:0.3|1:0.3|2:0.4",
     "errorFilePath": "./util/errorModel_1",
     "aggregateFilePath": "./server/aggregatedPth_1",
@@ -16,7 +16,8 @@
     "rootModelFilePath": "./server/rootModel_1",
     "clientsMetadataFolderPath": "./client/clientsMemory_1",
     "clientsNegotiationFolderPath": "./client/clientsNegotiation_1",
-    "enable_flid": false
+    "enable_flid": false,
+    "spec_diverse": false
   },
   "networkConfig" : {
     "rate" : {
@@ -50,7 +51,7 @@
       "lr_decay": 1.0,
       "momentum": 0.9,
       "epoch": 20,
-      "batchSize": 30,
+      "batchSize": 15,
       "iteration": 1000,
       "delayMin": 0,
       "delayMax": 0.03,
@@ -73,7 +74,7 @@
       "lr_decay": 1.0,
       "momentum": 0.9,
       "epoch": 20,
-      "batchSize": 30,
+      "batchSize": 15,
       "iteration": 1000,
       "delayMin": 0.03,
       "delayMax": 0.06,
@@ -96,7 +97,7 @@
       "lr_decay": 1.0,
       "momentum": 0.9,
       "epoch": 20,
-      "batchSize": 30,
+      "batchSize": 15,
       "iteration": 1000,
       "delayMin": 0.3,
       "delayMax": 1.0,
@@ -108,7 +109,7 @@
     }
   ],
   "server": {
-    "flRound": 3000,
+    "flRound": 1000,
     "examinData_batchSize": 50
   }
 }

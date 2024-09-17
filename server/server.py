@@ -156,7 +156,7 @@ class Server(Process):
         pth_files = [os.path.join(self.pth_folder, f) for f in os.listdir(self.pth_folder) if f.endswith('.pth')]
 
         # calculating round & waiting time
-        currentTime = round(time.time())
+        currentTime = time.time_ns()
 
         # calculating round time
         roundTime = currentTime - self.roundStartTime
@@ -274,7 +274,7 @@ class Server(Process):
 
         print("negotiating...")
         self.pickClients()
-        self.roundStartTime = round(time.time())  # log the round start time to track the round time
+        self.roundStartTime = time.time_ns()  # log the round start time to track the round time
         self.currentRound.value += 1  # by up-counting the round value we're letting participants know about this round
 
         if self.basicConfig['enable_flid']:
@@ -387,7 +387,7 @@ class Server(Process):
                     profile['clientMetadata']['epoch'] = allowed_min_epoch
 
                 epochNow = profile['clientMetadata']['epoch']
-                print(f'client {id} : dataSize was {epochBefore} -> now {epochNow}')
+                print(f'client {id} : epoch was {epochBefore} -> now {epochNow}')
 
                 negotiatePath = self.basicConfig['clientsNegotiationFolderPath'] + f'/{id}_negotiation.json'
                 with open(negotiatePath, 'w') as file:

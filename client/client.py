@@ -134,10 +134,11 @@ class Client(Process):
                 running_loss += loss.item()
 
                 # Intended delay -> to simulate device latency
-                delayMin = round(self.clientProfile['clientMetadata']['delayMin'], 3)
-                delayMax = round(self.clientProfile['clientMetadata']['delayMax'], 3)
-                randTime = random.uniform(delayMin, delayMax)
-                time.sleep(randTime)
+                if self.basicConfig['spec_diverse']:
+                    delayMin = round(self.clientProfile['clientMetadata']['delayMin'], 3)
+                    delayMax = round(self.clientProfile['clientMetadata']['delayMax'], 3)
+                    randTime = random.uniform(delayMin, delayMax)
+                    time.sleep(randTime)
 
             avg_loss = running_loss / len(self.train_loader)
             key_loss = f"client/performance/train/loss/client{self.client_internalId} training loss"
@@ -292,7 +293,7 @@ class Client(Process):
 
 
         """ ---- [OPEN] INITIAL TRAINING """
-        trainStartTime = round(time.time())
+        trainStartTime = time.time_ns()
         logList = self.train(epochs=self.clientProfile['clientMetadata']['epoch'])
 
         file_list = os.listdir(self.basicConfig['receivedPthPath'])
@@ -342,7 +343,7 @@ class Client(Process):
         """ [CLOSE] TRAIN """
 
         # Logging finished train time
-        trainFinishTime = round(time.time())
+        trainFinishTime = time.time_ns()
         lastTrainTime = trainFinishTime - trainStartTime
         default_metadata["performance"]["lastTrainTime"] = lastTrainTime
 
