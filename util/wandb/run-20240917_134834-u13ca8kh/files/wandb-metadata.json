@@ -1,0 +1,22 @@
+{
+    "os": "macOS-14.6.1-x86_64-i386-64bit",
+    "python": "3.9.18",
+    "heartbeatAt": "2024-09-17T04:48:37.090521",
+    "startedAt": "2024-09-17T04:48:34.531717",
+    "docker": null,
+    "cpu_count": 12,
+    "cuda": null,
+    "args": [],
+    "state": "running",
+    "program": "/Users/joonheelee/Documents/FLT/util/wandbExport.py",
+    "codePath": "util/wandbExport.py",
+    "git": {
+        "remote": "https://github.com/jlstdio/FLT.git",
+        "commit": "092aa566b983e01e3bdd7d7efdd2b1c565bacb5e"
+    },
+    "email": "neo81389@gmail.com",
+    "root": "/Users/joonheelee/Documents/FLT",
+    "host": "Joonhees-MacBook-Pro-16inch.local",
+    "username": "joonheelee",
+    "executable": "/Users/joonheelee/Documents/FLT/venv/bin/python"
+}

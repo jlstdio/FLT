@@ -1,5 +1,6 @@
 import copy
 import json
+import math
 import random
 from multiprocessing import Process
 import os
@@ -25,15 +26,17 @@ class PTHFileHandler(FileSystemEventHandler):
 
 def processDataByClientType(data_path, numOfTypes):
     json_files = [f for f in os.listdir(data_path) if f.endswith('.json')]
-    dataByType = []
+    dataByType_after = []
+    dataByType_pre = []
 
     for i in range(numOfTypes):
-        dataByType.append([])
+        dataByType_after.append([])
+        dataByType_pre.append([])
 
     for json_file in json_files:
         with open(os.path.join(data_path, json_file), 'r') as file:
             data = json.load(file)
-
+            pre_validation_result = data['pre_validation_result']
             train_validation_result = data['train_validation_result']
             metadata = data['metadata']
 
@@ -44,9 +47,15 @@ def processDataByClientType(data_path, numOfTypes):
                 "loss": train_validation_result['loss']
             }
 
-            dataByType[client_type].append(data_entry)
+            data_entry_pre = {
+                "accuracy": pre_validation_result['accuracy'],
+                "loss": pre_validation_result['loss']
+            }
 
-    return dataByType
+            dataByType_after[client_type].append(data_entry)
+            dataByType_pre[client_type].append(data_entry_pre)
+
+    return dataByType_after, dataByType_pre
 
 
 def calculate_average(dataByType):
@@ -147,7 +156,7 @@ class Server(Process):
         pth_files = [os.path.join(self.pth_folder, f) for f in os.listdir(self.pth_folder) if f.endswith('.pth')]
 
         # calculating round & waiting time
-        currentTime = round(time.time())
+        currentTime = time.time_ns()
 
         # calculating round time
         roundTime = currentTime - self.roundStartTime
@@ -202,9 +211,10 @@ class Server(Process):
         logList = [key, acc, self.currentRound.value]
         self.wandbQueue.put(logList)
 
-        dataByType = processDataByClientType(self.basicConfig['receivedDataPath'], self.numOfTypes)
+        dataByType, dataByType_pre = processDataByClientType(self.basicConfig['receivedDataPath'], self.numOfTypes)
 
         average_results = calculate_average(dataByType)  # [{'avg_acc': avg_accuracy, 'avg_loss': avg_loss}, ...]
+        average_results_pre = calculate_average(dataByType_pre)
 
         for idx, data in enumerate(average_results):
             key = f"clientType/performance/validation/accuracy/client type{idx} validation accuracy"
@@ -213,6 +223,16 @@ class Server(Process):
 
         for idx, data in enumerate(average_results):
             key = f"clientType/performance/validation/loss/client type{idx} validation loss"
+            logList = [key, data['avg_loss'], self.currentRound.value]
+            self.wandbQueue.put(logList)
+
+        for idx, data in enumerate(average_results_pre):
+            key = f"clientType/performance/pre-validation/accuracy/client type{idx} validation accuracy"
+            logList = [key, data['avg_acc'], self.currentRound.value]
+            self.wandbQueue.put(logList)
+
+        for idx, data in enumerate(average_results_pre):
+            key = f"clientType/performance/pre-validation/loss/client type{idx} validation loss"
             logList = [key, data['avg_loss'], self.currentRound.value]
             self.wandbQueue.put(logList)
 
@@ -250,9 +270,11 @@ class Server(Process):
             print(f'round is now {self.currentRound.value}')
 
     def negotiate(self):
+        dltAllFiles(self.basicConfig['clientsNegotiationFolderPath'])
+
         print("negotiating...")
         self.pickClients()
-        self.roundStartTime = round(time.time())  # log the round start time to track the round time
+        self.roundStartTime = time.time_ns()  # log the round start time to track the round time
         self.currentRound.value += 1  # by up-counting the round value we're letting participants know about this round
 
         if self.basicConfig['enable_flid']:
@@ -274,7 +296,7 @@ class Server(Process):
             client_profile = {}
             client_DataWiseScore = {} # clients data wise score
             client_TimeWiseScore = {}  # clients time wise score
-            client_combinedScore = {}
+            client_combinedScore = {}  # clients combined score
 
             for path in os.listdir(self.basicConfig['receivedProfilePath']):
                 clientId = int((str(path).split('/')[-1]).split('_')[1]) # f'/client_{self.client_internalId}_profile.json'
@@ -286,35 +308,88 @@ class Server(Process):
                     metadata = clientProfile['clientMetadata']
                     perf = clientProfile['performance']
 
-                    # calculate TWS
+                    """ calculate TWS """
                     estimated_train_time = (float(perf['lastTrainTime']) + float(perf['avgTrainTime'])) / 2
                     client_TimeWiseScore[clientId] = estimated_train_time
 
-                    # calculate DWS
-                    client_DataWiseScore[clientId] = metadata['dataSize'] * metadata['batchSize'] * metadata['epoch']
+                    """ if this is the first time running """
+                    if client_TimeWiseScore[clientId] == 0:
+                        client_TimeWiseScore[clientId] = 1
 
-                    # calculate combined score
-                    client_combinedScore[clientId] = client_TimeWiseScore[clientId] / client_DataWiseScore[clientId]
+                    """ calculate DWS """
+                    # client_DataWiseScore[clientId] = metadata['dataSize'] * metadata['batchSize'] * metadata['epoch']
 
-            # get poorest performance client
-            poorest_client_id = max(client_combinedScore, key=client_combinedScore.get)
-            poorest_client_score = client_combinedScore[poorest_client_id]
+                    """ calculate combined score """
+                    # client_combinedScore[clientId] = client_DataWiseScore[clientId] / client_TimeWiseScore[clientId]
+
+            """ get poorest performance client - combined score ver """
+            # poorest_client_id = min(client_combinedScore, key=client_combinedScore.get)
+            # poorest_client_score = client_combinedScore[poorest_client_id]
+
+            """ get poorest performance(longest time taken) client - TWS score ver """
+            # poorest_client_id = min(client_TimeWiseScore, key=client_TimeWiseScore.get)
+            # poorest_client_score = client_TimeWiseScore[poorest_client_id]
+
+            """ get median performance(avg time taken) client - based on TWS """
+            # avg_client_id = min(client_TimeWiseScore, key=client_TimeWiseScore.get)
+            avg_score = sum(client_TimeWiseScore.values()) / len(client_TimeWiseScore)
 
             # update & send parameters
             for id, profile in client_profile.items():
+                """ combined score ver """
+                # if client_combinedScore[id] != 0.0:
+                #     updateConstant = client_combinedScore[id] / poorest_client_score
+                # else:
+                #     updateConstant = 1.0
 
-                if client_combinedScore[id] != 0.0:
-                    updateConstant = poorest_client_score / client_combinedScore[id]
+                """ TWS ver """
+                # if client_TimeWiseScore[id] != 0.0:
+                #     updateConstant = client_TimeWiseScore[id] / poorest_client_score
+                # else:
+                #     updateConstant = 1.0
+
+                """ TWS ver using avg score"""
+                if client_TimeWiseScore[id] != 0.0:
+                    updateConstant = client_TimeWiseScore[id] / avg_score
                 else:
                     updateConstant = 1.0
 
-                dSize = profile['clientMetadata']['dataSize']
-                print(f'client {id} : dataSize was {dSize}', end='')
-                profile['clientMetadata']['dataSize'] *= updateConstant
-                dSize = profile['clientMetadata']['dataSize']
-                print(f'-> now {dSize}')
+                dSizeBefore = profile['clientMetadata']['dataSize']
+                epochBefore = profile['clientMetadata']['epoch']
 
-                negotiatePath = self.basicConfig['clientsNegotiationFolderPath'] + f'{id}_negotiation.json'
+                sqrtC = math.sqrt(updateConstant)
+                profile['clientMetadata']['dataSize'] *= sqrtC
+                profile['clientMetadata']['dataSize'] = round(profile['clientMetadata']['dataSize'], 2)
+                profile['clientMetadata']['epoch'] *= sqrtC
+                profile['clientMetadata']['epoch'] = round(profile['clientMetadata']['epoch'])
+
+                allowed_max_dataSize = 0.95
+                allowed_min_dataSize = 0.05
+
+                if profile['clientMetadata']['dataSize'] > allowed_max_dataSize:
+                    print(f'client {id} is at the maximum data size')
+                    profile['clientMetadata']['dataSize'] = allowed_max_dataSize
+                elif profile['clientMetadata']['dataSize'] < allowed_min_dataSize:
+                    print(f'client {id} is at the minimum data size')
+                    profile['clientMetadata']['dataSize'] = allowed_min_dataSize
+
+                dSizeNow = profile['clientMetadata']['dataSize']
+                print(f'client {id} : dataSize was {dSizeBefore} -> now {dSizeNow}')
+
+                allowed_max_epoch = 100
+                allowed_min_epoch = 10
+
+                if profile['clientMetadata']['epoch'] > allowed_max_epoch:
+                    print(f'client {id} is at the maximum epoch')
+                    profile['clientMetadata']['epoch'] = allowed_max_epoch
+                elif profile['clientMetadata']['epoch'] < allowed_min_epoch:
+                    print(f'client {id} is at the minimum epoch')
+                    profile['clientMetadata']['epoch'] = allowed_min_epoch
+
+                epochNow = profile['clientMetadata']['epoch']
+                print(f'client {id} : epoch was {epochBefore} -> now {epochNow}')
+
+                negotiatePath = self.basicConfig['clientsNegotiationFolderPath'] + f'/{id}_negotiation.json'
                 with open(negotiatePath, 'w') as file:
                     json.dump(profile, file, indent=4)
                     print(f"parameter sent to client {id}")

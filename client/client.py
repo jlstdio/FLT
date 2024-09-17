@@ -73,7 +73,7 @@ class Client(Process):
         dataset[N] => (label : {1}, data : {32,32,3})
         '''
 
-        train_ratio = self.config['dataSetFrac']
+        train_ratio = round(self.clientProfile['clientMetadata']['dataSize'], 2)
         validation_ratio = 1.0 - train_ratio
 
         lenData = len(self.dataset)
@@ -96,6 +96,7 @@ class Client(Process):
         valid_y = np.eye(10)[valid_y]
 
         # print(f'train y : {np.argmax(train_y, axis=1)} | valid y : {np.argmax(valid_y, axis=1)}')
+        # print(f'client {self.client_internalId} : {torch.tensor(train_x, dtype=torch.float32).shape}')
 
         X_train = torch.tensor(train_x, dtype=torch.float32).permute(0, 3, 1, 2)
         y_train = torch.tensor(train_y, dtype=torch.float32) # float32
@@ -133,10 +134,11 @@ class Client(Process):
                 running_loss += loss.item()
 
                 # Intended delay -> to simulate device latency
-                delayMin = round(self.clientProfile['clientMetadata']['delayMin'], 3)
-                delayMax = round(self.clientProfile['clientMetadata']['delayMax'], 3)
-                randTime = random.uniform(delayMin, delayMax)
-                time.sleep(randTime)
+                if self.basicConfig['spec_diverse']:
+                    delayMin = round(self.clientProfile['clientMetadata']['delayMin'], 3)
+                    delayMax = round(self.clientProfile['clientMetadata']['delayMax'], 3)
+                    randTime = random.uniform(delayMin, delayMax)
+                    time.sleep(randTime)
 
             avg_loss = running_loss / len(self.train_loader)
             key_loss = f"client/performance/train/loss/client{self.client_internalId} training loss"
@@ -202,6 +204,7 @@ class Client(Process):
             with open(self.metadataPath, 'r') as file:
                 self.clientProfile = json.load(file)
                 self.clientProfile['etc']['pickedCount'] += 1
+                default_metadata = self.clientProfile
         else:
             # 최초 생성 -> file의 metadata default로 지정하고 파일 읽음
             # default_metadata에 필요한 key와 값을 추가
@@ -234,24 +237,25 @@ class Client(Process):
 
             # first, send profile to Server
             with open(self.profileDataPath, 'w') as file:
-                json.dump(default_metadata, file, indent=4)
+                json.dump(self.clientProfile, file, indent=4)
 
             # wait for server negotiation
             print(f'client {self.client_internalId} is waiting for negotiation')
             negotiated = False
-            rxPath = self.basicConfig['clientsNegotiationFolderPath'] + f'{self.client_internalId}_negotiation.json'
+            rxPath = self.basicConfig['clientsNegotiationFolderPath'] + f'/{self.client_internalId}_negotiation.json'
             while negotiated is False:
                 if os.path.isfile(rxPath):
                     negotiated = True
+                    time.sleep(1)
 
             # read & apply negotiated parameter
             print(f'client {self.client_internalId} received proposal')
             with open(rxPath, 'r') as file:
-                negotiatedFile = json.load(file)['clientMetadata']
-                default_metadata["clientMetadata"]["lr"] = negotiatedFile['lr']
-                default_metadata["clientMetadata"]["epoch"] = negotiatedFile['epoch']
-                default_metadata["clientMetadata"]["batchSize"] = negotiatedFile['batchSize']
-                default_metadata["clientMetadata"]["dataSize"] = negotiatedFile['dataSize']
+                negotiatedFile = json.load(file)
+                default_metadata["clientMetadata"]["lr"] = negotiatedFile['clientMetadata']['lr']
+                default_metadata["clientMetadata"]["epoch"] = negotiatedFile['clientMetadata']['epoch']
+                default_metadata["clientMetadata"]["batchSize"] = negotiatedFile['clientMetadata']['batchSize']
+                default_metadata["clientMetadata"]["dataSize"] = negotiatedFile['clientMetadata']['dataSize']
 
             # update negotiated configuration (hyperparameter)
             os.remove(rxPath)
@@ -289,7 +293,7 @@ class Client(Process):
 
 
         """ ---- [OPEN] INITIAL TRAINING """
-        trainStartTime = round(time.time())
+        trainStartTime = time.time_ns()
         logList = self.train(epochs=self.clientProfile['clientMetadata']['epoch'])
 
         file_list = os.listdir(self.basicConfig['receivedPthPath'])
@@ -339,7 +343,7 @@ class Client(Process):
         """ [CLOSE] TRAIN """
 
         # Logging finished train time
-        trainFinishTime = round(time.time())
+        trainFinishTime = time.time_ns()
         lastTrainTime = trainFinishTime - trainStartTime
         default_metadata["performance"]["lastTrainTime"] = lastTrainTime
 
@@ -408,6 +412,10 @@ class Client(Process):
 
         with open(self.trainDataPath, 'w') as file:
             train_result = {
+                "pre_validation_result": {
+                    "accuracy": valid_acc_before_train,
+                    "loss": valid_loss_before_train
+                },
                 "train_validation_result": {
                     "accuracy" : valid_acc,
                     "loss": valid_loss

@@ -25,8 +25,8 @@ def showDistribution(clientsDict, classes):
         axes[client].set_ylabel('Count')
 
     plt.tight_layout()
-    plt.show()
-    # plt.savefig('test.pdf')
+    # plt.show()
+    plt.savefig('test.pdf')
 
 
 # state_dict에서 'module.' 제거하는 함수

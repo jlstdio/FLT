@@ -37,6 +37,9 @@ class wandbClient(Process):
             self.registerClientMetric(f"client/metadata/batchsize/client{i} batchSize")
 
         for typeNum in range(len(clientConfig)):
+            self.registerClientMetric(f"clientType/performance/pre-validation/loss/client type{typeNum} validation loss")
+            self.registerClientMetric(f"clientType/performance/pre-validation/accuracy/client type{typeNum} validation accuracy")
+
             self.registerClientMetric(f"clientType/performance/validation/loss/client type{typeNum} validation loss")
             self.registerClientMetric(f"clientType/performance/validation/accuracy/client type{typeNum} validation accuracy")
             self.registerClientMetric(f"clientType/efficiency/waitingTime/client type{typeNum} avg waiting time")

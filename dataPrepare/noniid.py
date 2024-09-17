@@ -37,10 +37,9 @@ def dirichletSplit(dataset, classes, alpha, numClients):
 
     return clientsDict
 
-
-def noniid_dirichlet_equal_split(dataset, num_classes, alpha, num_clients):
+def dirichlet_equal_split(dataset, num_classes, alpha, num_clients):
     # Unzipping the dataset
-    xs, ys = zip(*dataset)
+    ys, xs = zip(*dataset)
     labels = np.array(ys)
 
     dict_users = {}
@@ -51,7 +50,7 @@ def noniid_dirichlet_equal_split(dataset, num_classes, alpha, num_clients):
     for i in num_classes:
         examples_per_label.append(np.sum(labels == i))
 
-    # Each client has a multinomial distribution over classes drawn from a Dirichlet.
+    # Each client has a multinomial distribution over classes drawn from a Dirichlet distribution
     for i in range(num_clients):
         proportion = np.random.dirichlet(alpha * np.ones(len(num_classes)))
         multinomial_vals.append(proportion)
@@ -76,17 +75,17 @@ def noniid_dirichlet_equal_split(dataset, num_classes, alpha, num_clients):
     # Distributing examples to clients based on multinomial distribution
     for client in range(num_clients):
         for _ in range(examples_per_client):
-            sampled_label = np.argmax(np.random.multinomial(1, multinomial_vals[client]))
-            label_indices = example_indices[sampled_label]
-            if count[sampled_label] < examples_per_label[sampled_label]:
-                client_samples[client].append(label_indices[count[sampled_label]])
-                class_labels_for_clients[client].append(sampled_label)
-                count[sampled_label] += 1
+            if multinomial_vals[client].sum() > 0:
+                sampled_label = np.argmax(np.random.multinomial(1, multinomial_vals[client] / multinomial_vals[client].sum()))
+                label_indices = example_indices[sampled_label]
+                if count[sampled_label] < examples_per_label[sampled_label]:
+                    client_samples[client].append(xs[label_indices[count[sampled_label]]]) # Append data not just index
+                    class_labels_for_clients[client].append(sampled_label)
+                    count[sampled_label] += 1
 
-                # Resetting probabilities when all examples of a class have been distributed
-                if count[sampled_label] == examples_per_label[sampled_label]:
-                    multinomial_vals[:, sampled_label] = 0
-                    multinomial_vals = (multinomial_vals.T / multinomial_vals.sum(axis=1)).T
+                    # Resetting probabilities when all examples of a class have been distributed
+                    if count[sampled_label] == examples_per_label[sampled_label]:
+                        multinomial_vals[:, sampled_label] = 0
 
     # Shuffling samples for each client
     for client in range(num_clients):
