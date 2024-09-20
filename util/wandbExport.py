@@ -71,15 +71,17 @@ if __name__ == "__main__":
 
     # Example usage
     # Replace these variables with your actual values
+    idList = ['7vv646ua', 'ly9eqpb2']
+    nameList = ['m1-case 4-2', 'm1-case 5-1']
 
-    # jl-personal/FLT/8botukzc
-    # jl-personal/FLT/fzxsr1et
-    ENTITY = "jl-personal"  # e.g., "username" or "teamname"
-    PROJECT = "FLT"  # e.g., "my_ml_project"
-    RUN_ID = "fzxsr1et"  # e.g., "abc123def456"
-    RUN_NAME = "m1_case 3-1"
-    ROOT = "./data"
-    OUTPUT_CSV = f"{ROOT}/{RUN_NAME}.csv"  # Desired output file path
-    API_KEY = "1c388b5685cc46b5a59e607d5a7440bad274c044"  # Optional: If not set, ensure WANDB_API_KEY env variable is set
+    for i in range(len(idList)):
+        print(f'working on {idList[i]} : {nameList[i]}')
+        ENTITY = "jl-personal"  # e.g., "username" or "teamname"
+        PROJECT = "FLT"  # e.g., "my_ml_project"
+        RUN_ID = idList[i] # "fzxsr1et"  # e.g., "abc123def456"
+        RUN_NAME = nameList[i] # "m1_case 3-1"
+        ROOT = "./data"
+        OUTPUT_CSV = f"{ROOT}/{RUN_NAME}.csv"  # Desired output file path
+        API_KEY = "1c388b5685cc46b5a59e607d5a7440bad274c044"  # Optional: If not set, ensure WANDB_API_KEY env variable is set
 
-    export_wandb_run_history(ENTITY, PROJECT, RUN_ID, OUTPUT_CSV, API_KEY)
+        export_wandb_run_history(ENTITY, PROJECT, RUN_ID, OUTPUT_CSV, API_KEY)
