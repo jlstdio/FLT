@@ -42,6 +42,8 @@ def plot_all_last_train_time_frequency(root, fileList, title):
 if __name__ == "__main__":
     # fileList = ['m1-case 1-1.csv', 'm1-case 1-2.csv', 'm1-case 1-3.csv', 'm1-case 1-4.csv']
     # fileList = ['m1-case 2-1.csv', 'm1-case 2-2.csv']
-    fileList = ['m1-case 3-1.csv', 'm1-case 3-2.csv', 'm1-case 3-3.csv']
+    # fileList = ['m1-case 3-1.csv', 'm1-case 3-2.csv', 'm1-case 3-3.csv', 'm1-case 3-4.csv']
+    # fileList = ['m1-case 4-1.csv', 'm1-case 4-2.csv']
+    fileList = ['m1-case 5-1.csv']
     root = f'./data'
     plot_all_last_train_time_frequency(root=root, fileList=fileList, title='m1-case1-(1~4)')
