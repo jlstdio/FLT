@@ -1,15 +1,16 @@
 import copy
 from random import shuffle
-
 import numpy as np
 from numba.cuda import is_available
 import torch
 from torch.utils.data import DataLoader, TensorDataset
 from torch import nn
 import torch.nn.functional as F
+from util.util import scoring
+
 
 class examinModel:
-    def __init__(self, internalIdWithClients, cudaId, dataset, examinData_batchSize, model, pthPath):
+    def __init__(self, internalIdWithClients, cudaId, dataset, examinData_batchSize, model, pthPath, round, scorePath, scoreFileName):
         self.val_loader = None
         self.internalIdWithClients = internalIdWithClients
         self.dataset = copy.deepcopy(dataset)
@@ -18,7 +19,10 @@ class examinModel:
         self.device = torch.device(f"cuda:{cudaId}" if is_available() else "cpu")
         model_state_dict = torch.load(pthPath, map_location=self.device)  # torch.load(path, map_location=torch.device('cpu'))
         self.model.load_state_dict(model_state_dict)
+        self.scoreFileName = scoreFileName
         self.criterion = nn.BCELoss()
+        self.scorePath = scorePath
+        self.round = round
         # self.criterion = nn.CrossEntropyLoss()
 
         print(f"Examin device online")
@@ -52,6 +56,8 @@ class examinModel:
         self.model.eval()
         acc = 0
         count = 0
+        all_targets = []
+        all_outputs = []
         with torch.no_grad():
             total_loss = 0
             for inputs, targets in self.val_loader:
@@ -74,9 +80,15 @@ class examinModel:
 
                 loss = self.criterion(outputs, targets)
                 total_loss += loss.item()
+
+                all_targets.extend(targets.detach().cpu().numpy())
+                all_outputs.extend(outputs.detach().cpu().numpy())
+
             avg_loss = total_loss / len(self.val_loader)
             acc /= count
             acc *= 100
             print(f"Server validation Loss: {avg_loss:.4f} | accuracy: {acc: .4f}")
+
+        scoring(self.round, self.scorePath, self.scoreFileName, all_targets, all_outputs)
 
         return avg_loss, acc

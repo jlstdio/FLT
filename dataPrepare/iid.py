@@ -1,6 +1,11 @@
 import numpy as np
 
-def iidSplit(dataset, classes, batchSize, numClients):
+
+def iidSplit(dataset, classes, batchSize, numClients, seed=1234):
+    # torch.manual_seed(seed)
+    np.random.seed(seed)
+    # random.seed(seed)
+
     clientsDict = {i: [] for i in range(numClients)}
     class_data = {cls: [] for cls in classes}
 

@@ -81,7 +81,7 @@ def calculate_average(dataByType):
 
 class Server(Process):
     def __init__(self, rootModel, cudaId, flModel, examinDataset, serverConfig, basicConfig, currentRound, flipboard,
-                 turnFlag, sessionId, startingCuda, pickedClientsList, wandbQueue):
+                 turnFlag, sessionId, startingCuda, pickedClientsList, scorePath, wandbQueue):
         super(Server, self).__init__()
         self.wandbQueue = wandbQueue
         self.serverConfig = serverConfig
@@ -108,6 +108,7 @@ class Server(Process):
         self.seed = basicConfig['seed']
         self.numOfTypes = len(str(basicConfig['participantsInfo']).split('|'))
         self.roundStartTime = 0
+        self.scorePath = scorePath
 
         torch.manual_seed(self.seed)
         np.random.seed(self.seed)
@@ -199,7 +200,7 @@ class Server(Process):
 
         examinManager = examinModel(self.internalIdWithClients, self.cudaId, self.examinDataset,
                                     self.serverConfig['examinData_batchSize'], self.rootModel,
-                                    f'{rootModelPath}/rootModel.pth')
+                                    f'{rootModelPath}/rootModel.pth', self.currentRound.value, self.scorePath, '/aggregate.csv')
         examinManager.loadData()
         loss, acc = examinManager.examin()
 
@@ -277,6 +278,48 @@ class Server(Process):
         self.roundStartTime = time.time_ns()  # log the round start time to track the round time
         self.currentRound.value += 1  # by up-counting the round value we're letting participants know about this round
 
+        # m2 cases
+        '''
+        if self.basicConfig['enable_flid']:
+            # negotiate with clients
+
+            ## first, wait for clients to send all the profile of their own
+            waitForFiles = True
+            waitLimit = 300
+            waitCount = 0
+            while waitForFiles is True or waitCount > waitLimit:
+                profileCount = len(os.listdir(self.basicConfig['receivedProfilePath']))
+                if profileCount == int(self.basicConfig['updateClientsPerRound']):
+                    print("all profile received... negotiating")
+                    waitForFiles = False
+                time.sleep(1.0)
+                waitCount += 1
+
+            for path in os.listdir(self.basicConfig['receivedProfilePath']):
+                clientId = int((str(path).split('/')[-1]).split('_')[1]) # f'/client_{self.client_internalId}_profile.json'
+
+                with open(self.basicConfig['receivedProfilePath'] + "/" + path, 'r') as file:
+                    clientProfile = json.load(file)
+
+                    epochBefore = clientProfile['clientMetadata']['epoch']
+
+                    if clientId <= 8:
+                        clientProfile['clientMetadata']['epoch'] = 20
+                    elif clientId == 9:
+                        times = (self.currentRound.value - 1) // 20
+                        adjustedEpoch = 5 * (times + 1)
+                        clientProfile['clientMetadata']['epoch'] = adjustedEpoch
+
+                    epochNow = clientProfile['clientMetadata']['epoch']
+                    print(f'client {clientId} : epoch was {epochBefore} -> now {epochNow}')
+
+                    negotiatePath = self.basicConfig['clientsNegotiationFolderPath'] + f'/{clientId}_negotiation.json'
+                    with open(negotiatePath, 'w') as file:
+                        json.dump(clientProfile, file, indent=4)
+                        print(f"parameter sent to client {clientId}")
+            '''
+
+        # m3 cases
         if self.basicConfig['enable_flid']:
             # negotiate with clients
 
@@ -412,7 +455,7 @@ class Server(Process):
 
     def startFL(self):
         print('informing to clients')
-        self.negotiate() # self.pickClients()
+        self.negotiate()  # self.pickClients()
 
     def run(self):
         event_handler = PTHFileHandler(self)

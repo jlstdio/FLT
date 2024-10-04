@@ -1,12 +1,14 @@
 import copy
 import multiprocessing
 import os
+import sys
 import time
 from random import shuffle
 import numpy as np
 from client.client import Client
 from dataPrepare.iid import iidSplit
 from dataPrepare.noniid import *
+from dataPrepare.partiallyNonIid import partial_dirichlet_split, custom_split_non_iid
 from dataset.cifar10.cifar10DataLoader import cifar10Dataloader
 from dataset.mnist.mnistDataLoader import mnistDataloader
 # from model.resnet50 import resNet50
@@ -37,15 +39,7 @@ cifar_dataloader = cifar10Dataloader(data_dir)
 
 if __name__ == "__main__":
 
-    startingCuda = int(input('type of configuration? : '))
-    configPath = None
-
-    if startingCuda == 1:
-        configPath = './config1.json'
-        startingCuda = 0
-    elif startingCuda == 2:
-        configPath = './config2.json'
-        startingCuda = 2
+    configPath = sys.argv[1]  # './config1.json' | './config1.json' | ...
 
     with open(configPath, 'r') as file:
         config = json.load(file)
@@ -55,7 +49,19 @@ if __name__ == "__main__":
     basicConfig = config['basicInfo']
     networkConfig = config['networkConfig']
     numClients = basicConfig['numClient']
+    testSetPerClient = basicConfig['testSetPerClient']
+    validationSetPerClient = basicConfig['testSetPerClient']
     updateClientsPerRound = basicConfig['updateClientsPerRound']
+    startingCuda = basicConfig['startingCuda']
+
+    serverScoreFolderPath = basicConfig["serverScoreFolderRoot"] + "/" + basicConfig['testName'] + "-" + str(round(time.time()))
+    clientScoreFolderPath = basicConfig["clientScoreFolderRoot"] + "/" + basicConfig['testName'] + "-" + str(round(time.time()))
+    print('Scores are saved to...')
+    print(serverScoreFolderPath)
+    print(clientScoreFolderPath)
+
+    os.makedirs(serverScoreFolderPath, exist_ok=True)
+    os.makedirs(clientScoreFolderPath, exist_ok=True)
 
     dltAllFiles(basicConfig['errorFilePath'])
     dltAllFiles(basicConfig['receivedPthPath'])
@@ -66,14 +72,22 @@ if __name__ == "__main__":
 
     print('Count of using GPUs:', torch.cuda.device_count())
 
-    trainDataset = zip(y_train, x_train)
-    testDataset = zip(y_test[:1000], x_test[:1000])
+    clientDataSetSize = len(y_train)
+    clientTestDatasetSize = int(round(clientDataSetSize * testSetPerClient))
+
+    clientTestDataset = zip(y_train[:clientTestDatasetSize], x_train[:clientTestDatasetSize])
+    clientTrainDataset = zip(y_train[clientTestDatasetSize:], x_train[clientTestDatasetSize:])
+    serverTestDataset = zip(y_test[:1000], x_test[:1000])
     classes = list(set(y_train))
 
-    # clientsDict = iidSplit(trainDataset, classes, round(len(y_train)/numClients), numClients)
-    clientsDict = dirichlet_equal_split(trainDataset, classes, 0.25, numClients)
+    # clientsDict = iidSplit(clientTrainDataset, classes, round(len(y_train)/numClients), numClients, basicConfig['seed'])
+    # clientsDict = dirichlet_equal_split(clientTrainDataset, classes, 0.25, numClients, basicConfig['seed'])
+    # clientsDict = partial_dirichlet_split(clientTrainDataset, classes, 0.25, 100.0, numClients, 0, basicConfig['seed'])
+    clientsDictTrain = custom_split_non_iid(clientTrainDataset, classes, numClients, 9, 9, 0.15, basicConfig['seed'])
+    clientsDictTest = iidSplit(clientTestDataset, classes, int(round(clientTestDatasetSize/numClients)), numClients, basicConfig['seed'])
     # print(len(clientsDict[0]))
-    showDistribution(clientsDict, classes)
+    showDistribution(clientsDictTrain, classes, 'clientsDictTrain')
+    showDistribution(clientsDictTest, classes, 'clientsDictTest')
 
     multiprocessing.set_start_method('spawn')
     clientsPerCuda = basicConfig['clientsPerCuda']
@@ -89,11 +103,13 @@ if __name__ == "__main__":
 
     network = FLNetwork(numClients=numClients,
                         basicConfig=basicConfig,
-                        clientsDict=clientsDict,
+                        clientsDictTrain=clientsDictTrain,
+                        clientsDictTest=clientsDictTest,
                         clientConfig=clientConfig,
                         networkConfig=networkConfig,
                         modelToLoad=modelToLoad,
                         startingCuda=startingCuda,
+                        scorePath=clientScoreFolderPath,
                         wandbQueue=wandbQueue)
 
     network.start()
@@ -103,7 +119,7 @@ if __name__ == "__main__":
     server = Server(rootModel=modelToLoad[numClients],
                     cudaId=serverCudaId,
                     flModel=flModel,
-                    examinDataset=testDataset,
+                    examinDataset=serverTestDataset,
                     serverConfig=serverConfig,
                     basicConfig=basicConfig,
                     currentRound=serverRound,
@@ -112,6 +128,7 @@ if __name__ == "__main__":
                     sessionId=sessionId,
                     startingCuda=startingCuda,
                     pickedClientsList=pickedClients,
+                    scorePath=serverScoreFolderPath,
                     wandbQueue=wandbQueue)
 
     server.start()

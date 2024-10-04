@@ -1,7 +1,11 @@
 import numpy as np
 
 
-def dirichletSplit(dataset, classes, alpha, numClients):
+def dirichletSplit(dataset, classes, alpha, numClients, seed=1234):
+    # torch.manual_seed(seed)
+    np.random.seed(seed)
+    # random.seed(seed)
+
     clientsDict = {i: [] for i in range(numClients)}
     class_data = {cls: [] for cls in classes}
 
@@ -37,7 +41,11 @@ def dirichletSplit(dataset, classes, alpha, numClients):
 
     return clientsDict
 
-def dirichlet_equal_split(dataset, num_classes, alpha, num_clients):
+def dirichlet_equal_split(dataset, classes, alpha, num_clients, seed):
+    # torch.manual_seed(seed)
+    np.random.seed(seed)
+    # random.seed(seed)
+
     # Unzipping the dataset
     ys, xs = zip(*dataset)
     labels = np.array(ys)
@@ -47,19 +55,19 @@ def dirichlet_equal_split(dataset, num_classes, alpha, num_clients):
     examples_per_label = []
 
     # Counting examples per class
-    for i in num_classes:
+    for i in classes:
         examples_per_label.append(np.sum(labels == i))
 
     # Each client has a multinomial distribution over classes drawn from a Dirichlet distribution
     for i in range(num_clients):
-        proportion = np.random.dirichlet(alpha * np.ones(len(num_classes)))
+        proportion = np.random.dirichlet(alpha * np.ones(len(classes)))
         multinomial_vals.append(proportion)
 
     multinomial_vals = np.array(multinomial_vals)
     example_indices = []
 
     # Shuffling examples for each class
-    for k in num_classes:
+    for k in classes:
         label_k_indices = np.where(labels == k)[0]
         np.random.shuffle(label_k_indices)
         example_indices.append(label_k_indices)
@@ -67,7 +75,7 @@ def dirichlet_equal_split(dataset, num_classes, alpha, num_clients):
     example_indices = np.array(example_indices, dtype=object)
 
     client_samples = [[] for _ in range(num_clients)]
-    count = np.zeros(len(num_classes)).astype(int)
+    count = np.zeros(len(classes)).astype(int)
     class_labels_for_clients = [[] for _ in range(num_clients)]
 
     examples_per_client = int(len(labels) / num_clients)
