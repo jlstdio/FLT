@@ -1,9 +1,10 @@
 import os.path
 
 import matplotlib.pyplot as plt
+import pandas as pd
 
 
-def showDistribution(clientsDict, classes):
+def showDistribution(clientsDict, classes, name):
     num_clients = len(clientsDict)
     class_counts = {i: {cls: 0 for cls in classes} for i in range(num_clients)}
 
@@ -26,8 +27,29 @@ def showDistribution(clientsDict, classes):
 
     plt.tight_layout()
     # plt.show()
-    plt.savefig('test.pdf')
+    plt.savefig(f'{name}.pdf')
 
+
+def scoring(round_num, scorePath, fileName, all_targets, all_outputs):
+
+    target_key = f'target_{round_num}'
+    output_key = f'output_{round_num}'
+    scoreFilePath = scorePath + f'/{fileName}'
+
+    if not os.path.isfile(scoreFilePath):
+        os.makedirs(scorePath, exist_ok=True)
+        df = pd.DataFrame({
+            target_key: all_targets,
+            output_key: all_outputs
+        })
+        df.to_csv(scoreFilePath, index=False)
+    else:
+        existing_df = pd.read_csv(scoreFilePath)
+
+        existing_df[target_key] = all_targets
+        existing_df[output_key] = all_outputs
+
+        existing_df.to_csv(scoreFilePath, index=False)
 
 # state_dict에서 'module.' 제거하는 함수
 def remove_module_prefix(state_dict):

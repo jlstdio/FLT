@@ -5,6 +5,7 @@ import time
 from multiprocessing import Process
 from random import shuffle
 
+import pandas as pd
 from torch import optim, nn
 from torch.cuda import set_per_process_memory_fraction, is_available
 from torch.utils.data import DataLoader, TensorDataset
@@ -13,9 +14,13 @@ import torch.nn.functional as F
 import numpy as np
 import os
 
+from util.util import scoring
+
 
 class Client(Process):
-    def __init__(self, client_internalId, clientsPerCuda, dataset, seed, networkConfig, basicConfig, clientType, config, model, serverRound, flipboard, turnFlag, startingCuda, sessionId, wandbQueue):
+    def __init__(self, client_internalId, clientsPerCuda, datasetTrain, datasetTest, seed, networkConfig, basicConfig,
+                 clientType, config, model, serverRound, flipboard, turnFlag, startingCuda, sessionId, scorePath,
+                 wandbQueue):
         super().__init__()
 
         torch.manual_seed(seed)
@@ -30,7 +35,8 @@ class Client(Process):
         self.test_loader = None
         self.val_loader = None
         self.train_loader = None
-        self.dataset = dataset
+        self.datasetTrain = datasetTrain
+        self.datasetTest = datasetTest
         self.basicConfig = basicConfig
         self.networkConfig = networkConfig
         self.config = config
@@ -48,8 +54,10 @@ class Client(Process):
 
         self.metadataPath = self.basicConfig['clientsMetadataFolderPath'] + f"/client_{self.client_internalId}.json"
         self.trainDataPath = self.basicConfig['receivedDataPath'] + f"/client_{self.client_internalId}_trainData.json"
-        self.profileDataPath = self.basicConfig['receivedProfilePath'] + f'/client_{self.client_internalId}_profile.json'
+        self.profileDataPath = self.basicConfig[
+                                   'receivedProfilePath'] + f'/client_{self.client_internalId}_profile.json'
         self.clientProfile = None
+        self.scorePath = scorePath + f'/{self.client_internalId}'
 
         '''
         # Wrap the model with DataParallel
@@ -74,18 +82,13 @@ class Client(Process):
         '''
 
         train_ratio = round(self.clientProfile['clientMetadata']['dataSize'], 2)
-        validation_ratio = 1.0 - train_ratio
+        train_size = int(train_ratio * len(self.datasetTrain))
 
-        lenData = len(self.dataset)
-        train_size = int(train_ratio * lenData)
-
-        shuffle(self.dataset)
-
-        train_data = self.dataset[:train_size]
-        validation_data = self.dataset[train_size:]
+        train_data = self.datasetTrain[:train_size]
+        test_data = self.datasetTest
 
         train_y, train_x = zip(*train_data)
-        valid_y, valid_x = zip(*validation_data)
+        valid_y, valid_x = zip(*test_data)
 
         train_x = np.array(train_x)
         train_y = np.array(train_y)
@@ -99,10 +102,10 @@ class Client(Process):
         # print(f'client {self.client_internalId} : {torch.tensor(train_x, dtype=torch.float32).shape}')
 
         X_train = torch.tensor(train_x, dtype=torch.float32).permute(0, 3, 1, 2)
-        y_train = torch.tensor(train_y, dtype=torch.float32) # float32
+        y_train = torch.tensor(train_y, dtype=torch.float32)  # float32
 
         X_val = torch.tensor(valid_x, dtype=torch.float32).permute(0, 3, 1, 2)
-        y_val = torch.tensor(valid_y, dtype=torch.float32) # float32
+        y_val = torch.tensor(valid_y, dtype=torch.float32)  # float32
 
         X_train = F.normalize(X_train, dim=0)
         X_val = F.normalize(X_val, dim=0)
@@ -110,14 +113,20 @@ class Client(Process):
         train_dataset = TensorDataset(X_train, y_train)
         val_dataset = TensorDataset(X_val, y_val)
 
-        self.train_loader = DataLoader(train_dataset, batch_size=self.clientProfile['clientMetadata']['batchSize'], shuffle=True)
-        self.val_loader = DataLoader(val_dataset, batch_size=self.clientProfile['clientMetadata']['batchSize'], shuffle=True)
+        self.train_loader = DataLoader(train_dataset, batch_size=self.clientProfile['clientMetadata']['batchSize'],
+                                       shuffle=True)
+        self.val_loader = DataLoader(val_dataset, batch_size=self.clientProfile['clientMetadata']['batchSize'],
+                                     shuffle=True)
 
     def train(self, epochs=10):
         lr = self.clientProfile['clientMetadata']['lr']
         logList = None
         self.optimizer = optim.SGD(self.model.parameters(), lr=lr)
         print(f'client{self.client_internalId} lr at {lr}')
+
+        all_targets = []
+        all_outputs = []
+
         self.model.train()
         for epoch in range(epochs):
             running_loss = 0.0
@@ -140,6 +149,9 @@ class Client(Process):
                     randTime = random.uniform(delayMin, delayMax)
                     time.sleep(randTime)
 
+                all_targets.extend(targets.detach().cpu().numpy())
+                all_outputs.extend(outputs.detach().cpu().numpy())
+
             avg_loss = running_loss / len(self.train_loader)
             key_loss = f"client/performance/train/loss/client{self.client_internalId} training loss"
             # key_acc = f"client/performance/train/accuracy/client{self.client_internalId} training accuracy"
@@ -154,12 +166,19 @@ class Client(Process):
 
         self.clientProfile['clientMetadata']['lr'] = round(lr, 6)
 
+        # round_num = self.clientProfile["etc"]["pickedCount"]
+        # scoring(round_num, self.scorePath, f"/train.csv", all_targets, all_outputs)
+
         return logList
 
-    def validate(self):
+    def validate(self, mode):
         self.model.eval()
         acc = 0
         count = 0
+
+        all_targets = []
+        all_outputs = []
+
         with torch.no_grad():
             total_loss = 0
             for inputs, targets in self.val_loader:
@@ -180,23 +199,31 @@ class Client(Process):
 
                 loss = self.criterion(outputs, targets)
                 total_loss += loss.item()
+
+                all_targets.extend(targets.detach().cpu().numpy())
+                all_outputs.extend(outputs.detach().cpu().numpy())
+
             avg_loss = total_loss / len(self.val_loader)
             acc /= count
             acc *= 100.0
 
-            # self.wandbClient.sendLog(key=f"client{self.client_internalId} validation loss", data=avg_loss)
-            print(f"Client {self.client_internalId} Validation | Loss: {avg_loss:.4f} Accuracy: {acc}")
-            return acc, avg_loss
+        # round_num, scorePath, all_targets, all_outputs
+        round_num = self.clientProfile["etc"]["pickedCount"]
+        scoring(round_num, self.scorePath, f"/{mode}.csv", all_targets, all_outputs)
+
+        # self.wandbClient.sendLog(key=f"client{self.client_internalId} validation loss", data=avg_loss)
+        print(f"Client {self.client_internalId} Validation | Loss: {avg_loss:.4f} Accuracy: {acc}")
+        return acc, avg_loss
 
     def run(self):
         """ RUN 함수 """
-        
+
         """ [OPEN] - INITIATING, GATHERING METADATA """
         print(f"Client {self.client_internalId} with PID {os.getpid()} started.")
         default_metadata = {
             "clientMetadata": {},
-            "performance" : {},
-            "etc" : {}
+            "performance": {},
+            "etc": {}
         }
 
         if os.path.exists(self.metadataPath):
@@ -213,7 +240,7 @@ class Client(Process):
             default_metadata["clientMetadata"]["lr"] = self.config['lr']
             default_metadata["clientMetadata"]["epoch"] = self.config['epoch']
             default_metadata["clientMetadata"]["batchSize"] = self.config['batchSize']
-            default_metadata["clientMetadata"]["dataSize"] = self.config['dataSize'] # default 0.9
+            default_metadata["clientMetadata"]["dataSize"] = self.config['dataSize']  # default 0.9
 
             default_metadata["performance"]["lastTrainTime"] = 0.0
             default_metadata["performance"]["avgTrainTime"] = 0.0
@@ -223,14 +250,11 @@ class Client(Process):
             with open(self.metadataPath, 'w') as file:
                 json.dump(default_metadata, file, indent=4)
 
-            self.clientProfile = default_metadata # load default parameter
+            self.clientProfile = default_metadata  # load default parameter
 
         pickedCount = self.clientProfile["etc"]["pickedCount"]
         print(f'{self.client_internalId} pickedCount : {pickedCount}')
         """ [CLOSE] INITIATING, GATHERING METADATA """
-
-
-
 
         """ [OPEN] HYPERPARAMETER NEGOTIATING """
         if self.basicConfig['enable_flid']:
@@ -259,11 +283,8 @@ class Client(Process):
 
             # update negotiated configuration (hyperparameter)
             os.remove(rxPath)
-            self.clientProfile = default_metadata # load updated parameter
+            self.clientProfile = default_metadata  # load updated parameter
         """ [CLOSE] HYPERPARAMETER NEGOTIATING """
-
-
-
 
         """ [OPEN] TRAIN """
         self.round = self.serverRound.value
@@ -279,7 +300,7 @@ class Client(Process):
         self.model = self.model.to(self.device)
 
         """ ---- [OPEN] GLOBAL MODEL VALIDATION BEFORE TRAIN """
-        valid_acc_before_train, valid_loss_before_train = self.validate()
+        valid_acc_before_train, valid_loss_before_train = self.validate('pre-test')
 
         key_loss_before_train = f"client/performance/pre-validation/loss/client{self.client_internalId} training loss"
         key_acc_before_train = f"client/performance/pre-validation/accuracy/client{self.client_internalId} training accuracy"
@@ -291,7 +312,6 @@ class Client(Process):
         self.wandbQueue.put(logList_train_acc_before_train)
         """ ---- [CLOSE] GLOBAL MODEL VALIDATION BEFORE TRAIN """
 
-
         """ ---- [OPEN] INITIAL TRAINING """
         trainStartTime = time.time_ns()
         logList = self.train(epochs=self.clientProfile['clientMetadata']['epoch'])
@@ -300,8 +320,6 @@ class Client(Process):
         file_count = len(file_list) + 1
         self.finishRate = file_count / self.basicConfig['updateClientsPerRound']
         """ ---- [CLOSE] INITIAL TRAINING """
-
-
 
         """ ---- [OPEN] OPTIONAL : ADDITIONAL TRAINING """
         ## FLID - epoch control
@@ -368,7 +386,8 @@ class Client(Process):
         hyperparamLogList = [key, default_metadata["performance"]["avgTrainTime"], self.round]
         self.wandbQueue.put(hyperparamLogList)
 
-        print(f'Next time client {self.client_internalId} will perform ' + str(self.clientProfile['clientMetadata']['epoch']) + ' epochs')
+        print(f'Next time client {self.client_internalId} will perform ' + str(
+            self.clientProfile['clientMetadata']['epoch']) + ' epochs')
         self.wandbQueue.put(logList)
 
         # update meta-data of client hyper parameter
@@ -387,12 +406,11 @@ class Client(Process):
         hyperparamLogList = [key, self.clientProfile['clientMetadata']['dataSize'], self.round]
         self.wandbQueue.put(hyperparamLogList)
 
-
         clientModelToServer = self.basicConfig['receivedPthPath']
         torch.save(self.model.state_dict(), f'{clientModelToServer}/{self.client_internalId}_round{self.round}.pth')
 
         """ ---- [OPEN] FINE TUNED MODEL VALIDATION AFTER TRAIN """
-        valid_acc, valid_loss = self.validate()
+        valid_acc, valid_loss = self.validate(('after-test'))
 
         key_loss = f"client/performance/validation/loss/client{self.client_internalId} training loss"
         key_acc = f"client/performance/validation/accuracy/client{self.client_internalId} training accuracy"
@@ -417,23 +435,20 @@ class Client(Process):
                     "loss": valid_loss_before_train
                 },
                 "train_validation_result": {
-                    "accuracy" : valid_acc,
+                    "accuracy": valid_acc,
                     "loss": valid_loss
                 },
-                "metadata" : {
-                    "clientType" : self.clientType,
-                    "lr" : self.clientProfile['clientMetadata']['lr'],
-                    "epoch" : self.clientProfile['clientMetadata']['epoch'],
-                    "batchSize" : self.clientProfile['clientMetadata']['batchSize'],
-                    "dataSize" : self.clientProfile['clientMetadata']['dataSize']
+                "metadata": {
+                    "clientType": self.clientType,
+                    "lr": self.clientProfile['clientMetadata']['lr'],
+                    "epoch": self.clientProfile['clientMetadata']['epoch'],
+                    "batchSize": self.clientProfile['clientMetadata']['batchSize'],
+                    "dataSize": self.clientProfile['clientMetadata']['dataSize']
                 }
             }
 
             json.dump(train_result, file, indent=4)
 
         """ [CLOSE] DATA LOGGING """
-
-
-
 
         print(f"Client {self.client_internalId} finished training round {self.round}")
