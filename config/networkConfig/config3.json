@@ -1,16 +1,16 @@
 {
   "basicInfo" : {
     "projectName": "FLT",
-    "testName": "",
+    "testName": "m2 - case 2 - 1",
     "dataset": "cifar-10",
-    "testSetPerClient": 0.2,
-    "validationSetPerClient": 0.1,
-    "numClient" : 100,
-    "clientsPerCuda": 6,
+    "testSetPerClient": 0.5,
+    "validationSetPerClient": 0.0,
+    "numClient" : 10,
+    "clientsPerCuda": 3,
     "updateClientsPerRound": 10,
     "seed": 1234,
     "startingCuda": 0,
-    "participantsInfo": "0:0.3|1:0.3|2:0.4",
+    "participantsInfo": "0:0.9|1:0.1",
     "errorFilePath": "./util/errorModel_1",
     "aggregateFilePath": "./server/aggregatedPth_1",
     "receivedPthPath": "./server/receivedPth_1",
@@ -44,7 +44,7 @@
   },
   "clients": [
     {
-      "type": "fastest edge",
+      "type": "normal spec",
       "gpuClk": 1.0,
       "vram": 300,
       "cpuClk": 1.0,
@@ -60,37 +60,14 @@
       "iteration": 1000,
       "delayMin": 0,
       "delayMax": 0.03,
-      "dataSize" : 1.0,
+      "trainDataSize" : 1.0,
       "costFunc": "BCE loss",
       "optim" : "SGD",
       "reg": "L2",
       "model": "testNN"
     },
     {
-      "type": "middle spec edge",
-      "gpuClk": 1.0,
-      "vram": 300,
-      "cpuClk": 1.0,
-      "ram": 300,
-      "disk": 500,
-      "memFrac": 0.01,
-      "lr": 0.01,
-      "lr_decay_step": 1,
-      "lr_decay": 1.0,
-      "momentum": 0.9,
-      "epoch": 5,
-      "batchSize": 15,
-      "iteration": 1000,
-      "delayMin": 0.03,
-      "delayMax": 0.06,
-      "dataSize" : 1.0,
-      "costFunc": "BCE loss",
-      "optim" : "SGD",
-      "reg": "L2",
-      "model": "testNN"
-    },
-    {
-      "type": "low spec edge",
+      "type": "extremely biased spec",
       "gpuClk": 1.0,
       "vram": 300,
       "cpuClk": 1.0,
@@ -106,7 +83,7 @@
       "iteration": 1000,
       "delayMin": 0.3,
       "delayMax": 1.0,
-      "dataSize" : 1.0,
+      "trainDataSize" : 1.0,
       "costFunc": "BCE loss",
       "optim" : "SGD",
       "reg": "L2",
@@ -114,7 +91,7 @@
     }
   ],
   "server": {
-    "flRound": 1000,
+    "flRound": 100,
     "examinData_batchSize": 50
   }
 }

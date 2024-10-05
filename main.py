@@ -8,7 +8,7 @@ import numpy as np
 from client.client import Client
 from dataPrepare.iid import iidSplit
 from dataPrepare.noniid import *
-from dataPrepare.partiallyNonIid import partial_dirichlet_split, custom_split_non_iid
+from dataPrepare.partiallyNonIid import custom_split_non_iid, difference_bias_by_type
 from dataset.cifar10.cifar10DataLoader import cifar10Dataloader
 from dataset.mnist.mnistDataLoader import mnistDataloader
 # from model.resnet50 import resNet50
@@ -75,19 +75,18 @@ if __name__ == "__main__":
     clientDataSetSize = len(y_train)
     clientTestDatasetSize = int(round(clientDataSetSize * testSetPerClient))
 
-    clientTestDataset = zip(y_train[:clientTestDatasetSize], x_train[:clientTestDatasetSize])
-    clientTrainDataset = zip(y_train[clientTestDatasetSize:], x_train[clientTestDatasetSize:])
-    serverTestDataset = zip(y_test[:1000], x_test[:1000])
+    clientDataset = zip(y_train[:clientTestDatasetSize], x_train[:clientTestDatasetSize])
+    serverTestDataset = zip(y_test[:5000], x_test[:5000])
     classes = list(set(y_train))
 
-    # clientsDict = iidSplit(clientTrainDataset, classes, round(len(y_train)/numClients), numClients, basicConfig['seed'])
-    # clientsDict = dirichlet_equal_split(clientTrainDataset, classes, 0.25, numClients, basicConfig['seed'])
-    # clientsDict = partial_dirichlet_split(clientTrainDataset, classes, 0.25, 100.0, numClients, 0, basicConfig['seed'])
-    clientsDictTrain = custom_split_non_iid(clientTrainDataset, classes, numClients, 9, 9, 0.15, basicConfig['seed'])
-    clientsDictTest = iidSplit(clientTestDataset, classes, int(round(clientTestDatasetSize/numClients)), numClients, basicConfig['seed'])
+    # clientsDict = iidSplit(clientDataset, classes, round(len(y_train)/numClients), numClients, basicConfig['seed'])
+    # clientsDict = dirichlet_equal_split(clientDataset, classes, 0.25, numClients, basicConfig['seed'])
+    # clientsDictTrain = custom_split_non_iid(clientDataset, classes, numClients, 9, 9, 0.15, basicConfig['seed'])
+    # clientsDictTrain = custom_split_non_iid(clientDataset, classes, numClients, 9, 9, 0.15, basicConfig['seed'])
+    clientsDatasetDict = difference_bias_by_type(clientDataset, classes, configPath="./config/datasetConfig/dataConfig1.json", seed=basicConfig['seed'])
     # print(len(clientsDict[0]))
-    showDistribution(clientsDictTrain, classes, 'clientsDictTrain')
-    showDistribution(clientsDictTest, classes, 'clientsDictTest')
+    showDistribution(clientsDatasetDict, classes, 'clientsDictTrain')
+    # showDistribution(clientsDictTest, classes, 'clientsDictTest')
 
     multiprocessing.set_start_method('spawn')
     clientsPerCuda = basicConfig['clientsPerCuda']
@@ -103,15 +102,13 @@ if __name__ == "__main__":
 
     network = FLNetwork(numClients=numClients,
                         basicConfig=basicConfig,
-                        clientsDictTrain=clientsDictTrain,
-                        clientsDictTest=clientsDictTest,
+                        clientsDatasetDict=clientsDatasetDict,
                         clientConfig=clientConfig,
                         networkConfig=networkConfig,
                         modelToLoad=modelToLoad,
                         startingCuda=startingCuda,
                         scorePath=clientScoreFolderPath,
                         wandbQueue=wandbQueue)
-
     network.start()
 
     serverRound, flipboard, turnFlag, sessionId, pickedClients = network.getSharedInfo()
