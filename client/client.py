@@ -4,7 +4,6 @@ import random
 import time
 from multiprocessing import Process
 from random import shuffle
-
 import pandas as pd
 from torch import optim, nn
 from torch.cuda import set_per_process_memory_fraction, is_available
@@ -18,7 +17,7 @@ from util.util import scoring
 
 
 class Client(Process):
-    def __init__(self, client_internalId, clientsPerCuda, datasetTrain, datasetTest, seed, networkConfig, basicConfig,
+    def __init__(self, client_internalId, clientsPerCuda, dataset, seed, networkConfig, basicConfig,
                  clientType, config, model, serverRound, flipboard, turnFlag, startingCuda, sessionId, scorePath,
                  wandbQueue):
         super().__init__()
@@ -35,8 +34,7 @@ class Client(Process):
         self.test_loader = None
         self.val_loader = None
         self.train_loader = None
-        self.datasetTrain = datasetTrain
-        self.datasetTest = datasetTest
+        self.dataset = dataset
         self.basicConfig = basicConfig
         self.networkConfig = networkConfig
         self.config = config
@@ -82,10 +80,10 @@ class Client(Process):
         '''
 
         train_ratio = round(self.clientProfile['clientMetadata']['dataSize'], 2)
-        train_size = int(train_ratio * len(self.datasetTrain))
+        train_size = int(train_ratio * len(self.dataset))
 
-        train_data = self.datasetTrain[:train_size]
-        test_data = self.datasetTest
+        train_data = self.dataset[:train_size]
+        test_data = self.dataset[train_size:]
 
         train_y, train_x = zip(*train_data)
         valid_y, valid_x = zip(*test_data)
@@ -240,7 +238,7 @@ class Client(Process):
             default_metadata["clientMetadata"]["lr"] = self.config['lr']
             default_metadata["clientMetadata"]["epoch"] = self.config['epoch']
             default_metadata["clientMetadata"]["batchSize"] = self.config['batchSize']
-            default_metadata["clientMetadata"]["dataSize"] = self.config['dataSize']  # default 0.9
+            default_metadata["clientMetadata"]["dataSize"] = self.config['trainDataSize']  # default 0.9
 
             default_metadata["performance"]["lastTrainTime"] = 0.0
             default_metadata["performance"]["avgTrainTime"] = 0.0

@@ -1,0 +1,16 @@
+{
+  "clientsType": [
+    {
+      "numberOfClients": 4,
+      "alpha": 50000.0
+    },
+    {
+      "numberOfClients": 4,
+      "alpha": 1.0
+    },
+    {
+      "numberOfClients": 4,
+      "alpha": 0.25
+    }
+  ]
+}

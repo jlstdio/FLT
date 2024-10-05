@@ -83,7 +83,7 @@ def clientTypeDistribution(clientTypeData, numClients):
         ratio = float(data.split(':')[1])
         type_char = data.split(':')[0]
         types.append(type_char)
-        count = int(numClients * ratio)
+        count = int(round(numClients * ratio))
         result += [type_char] * count
 
     types = set(types)

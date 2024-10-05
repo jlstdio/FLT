@@ -1,10 +1,18 @@
+import copy
+import json
+
 import numpy as np
 
 
-def partial_dirichlet_split(dataset, classes, alpha1=0.05, alpha2=20.0, num_clients=10, non_iid_range=0, seed=1234):
+def difference_bias_by_type(dataset, classes, configPath="", seed=1234):
     # torch.manual_seed(seed)
     np.random.seed(seed)
     # random.seed(seed)
+
+    with open(configPath, 'r') as file:
+        config = json.load(file)
+
+    config = config['clientsType']
 
     ys, xs = zip(*dataset)
     labels = np.array(ys)
@@ -17,14 +25,13 @@ def partial_dirichlet_split(dataset, classes, alpha1=0.05, alpha2=20.0, num_clie
     for i in classes:
         examples_per_label.append(np.sum(labels == i))
 
-    # extract and apply distribution using dirichlet for each client
-    for i in range(num_clients):
-        if i <= non_iid_range:
-            current_alpha = alpha1  # first N range clients -> non-IID
-        else:
-            current_alpha = alpha2   # rest -> (almost) IID
-        proportion = np.random.dirichlet(current_alpha * np.ones(len(classes)))
-        multinomial_vals.append(proportion)
+    num_clients = 0
+    for clientType in config:
+        num_clients += clientType['numberOfClients']
+
+        for j in range(clientType['numberOfClients']):
+            proportion = np.random.dirichlet(clientType['alpha'] * np.ones(len(classes)))
+            multinomial_vals.append(proportion)
 
     multinomial_vals = np.array(multinomial_vals)
     example_indices = []
@@ -151,3 +158,68 @@ def custom_split_non_iid(dataset, classes, num_clients, biased_class=9, biased_c
         dict_users[c] = paired_samples
 
     return dict_users
+
+
+class Dirichlet_(object):
+    def __init__(self, trainset, testset, n_clients, min_alpha=0.5, max_alpha=10000, min_samples=10):
+        self.n_clients = n_clients
+        self.trainset = trainset
+        self.testset = testset
+        self.num_classes = self.testset.targets.max().item() + 1
+        self.total_train_samples = len(self.trainset)
+        self.total_test_samples = len(self.testset)
+        self.min_samples = min_samples
+        self.min_alpha = min_alpha
+        self.max_alpha = max_alpha
+
+    def split_dataset(self):
+        # dirichlet_dist = np.random.dirichlet([self.alpha] * self.n_clients, self.num_classes)
+        # dirichlet_dist = np.random.dirichlet([0.1]*self.num_classes, self.n_clients)
+        alpha_for_clients = np.linspace(self.max_alpha, self.min_alpha, self.n_clients)
+        # n_samples_per_client = int(len(self.trainset) // self.n_clients)  # => 완벽하게 동일한 개수를 가져가게 하고 싶으면 이부분 수정
+
+        grouped_data_train = [[] for _ in range(self.n_clients)]
+        grouped_data_test = [[] for _ in range(self.n_clients)]
+        for cidx in range(self.n_clients):
+            dirichlet_dist = np.random.dirichlet([alpha_for_clients[cidx]] * self.num_classes)
+            total_trainset = 0
+            print(f'##### Client {cidx} (alpha={alpha_for_clients[cidx]:.2f}) #####')
+            for label in range(self.num_classes):
+                train_label_indices = np.where(self.trainset.targets == label)[0]
+                test_label_indices = np.where(self.testset.targets == label)[0]
+                np.random.shuffle(train_label_indices)
+                np.random.shuffle(test_label_indices)
+
+                current_train_idx, current_test_idx = 0, 0
+                remaining_samples_train = len(train_label_indices) - self.min_samples * self.n_clients
+                remaining_samples_test = len(test_label_indices) - (
+                            self.min_samples * self.n_clients * self.total_test_samples // self.total_train_samples)
+                num_samples_train = self.min_samples + int(dirichlet_dist[label] * remaining_samples_train)
+                total_trainset += num_samples_train
+                print(f'Label {label}: {num_samples_train:>4} samples')
+                grouped_data_train[cidx].extend(
+                    train_label_indices[current_train_idx:current_train_idx + num_samples_train])
+                current_train_idx += num_samples_train
+
+                num_samples_test = self.min_samples * self.total_test_samples // self.total_train_samples + int(
+                    dirichlet_dist[label] * remaining_samples_test)
+                grouped_data_test[cidx].extend(test_label_indices[current_test_idx:current_test_idx + num_samples_test])
+                current_test_idx += num_samples_test
+            print(f'Total samples: {total_trainset}')
+            print("#####################\n")
+
+        grouped_data_trainsets = [copy.deepcopy(self.trainset) for _ in range(self.n_clients)]
+        grouped_data_testsets = [copy.deepcopy(self.testset) for _ in range(self.n_clients)]
+
+        for cidx in range(self.n_clients):
+            indices = grouped_data_train[cidx]
+            grouped_data_trainsets[cidx].data = copy.deepcopy(self.trainset.data[indices])
+            grouped_data_trainsets[cidx].targets = copy.deepcopy(self.trainset.targets[indices])
+
+            indices = grouped_data_test[cidx]
+            grouped_data_testsets[cidx].data = copy.deepcopy(self.testset.data[indices])
+            grouped_data_testsets[cidx].targets = copy.deepcopy(self.testset.targets[indices])
+
+        return grouped_data_trainsets, grouped_data_testsets
+
+
