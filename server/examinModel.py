@@ -1,5 +1,5 @@
 import copy
-from random import shuffle
+import random
 import numpy as np
 from numba.cuda import is_available
 import torch
@@ -10,7 +10,7 @@ from util.util import scoring
 
 
 class examinModel:
-    def __init__(self, internalIdWithClients, cudaId, dataset, examinData_batchSize, model, pthPath, round, scorePath, scoreFileName):
+    def __init__(self, internalIdWithClients, cudaId, dataset, examinData_batchSize, model, pthPath, seed, curRound, scorePath, scoreFileName):
         self.val_loader = None
         self.internalIdWithClients = internalIdWithClients
         self.dataset = copy.deepcopy(dataset)
@@ -22,8 +22,16 @@ class examinModel:
         self.scoreFileName = scoreFileName
         self.criterion = nn.BCELoss()
         self.scorePath = scorePath
-        self.round = round
+        self.round = curRound
         # self.criterion = nn.CrossEntropyLoss()
+
+        torch.manual_seed(seed)  # torch를 거치는 모든 난수들의 생성순서를 고정한다
+        torch.cuda.manual_seed(seed)  # cuda를 사용하는 메소드들의 난수시드는 따로 고정해줘야한다
+        torch.cuda.manual_seed_all(seed)  # if use multi-GPU
+        torch.backends.cudnn.deterministic = True  # 딥러닝에 특화된 CuDNN의 난수시드도 고정
+        torch.backends.cudnn.benchmark = False
+        np.random.seed(seed)  # numpy를 사용할 경우 고정
+        random.seed(seed)  # 파이썬 자체 모듈 random 모듈의 시드 고정
 
         print(f"Examin device online")
         print(f'{self.device} available')
@@ -89,6 +97,6 @@ class examinModel:
             acc *= 100
             print(f"Server validation Loss: {avg_loss:.4f} | accuracy: {acc: .4f}")
 
-        scoring(self.round, self.scorePath, self.scoreFileName, all_targets, all_outputs)
+        scoring(self.round, self.scorePath, self.scoreFileName, all_targets, all_outputs, acc, avg_loss)
 
         return avg_loss, acc

@@ -1,14 +1,14 @@
 {
   "basicInfo" : {
     "projectName": "FLT",
-    "testName": "m2 - case 0 - 1",
+    "testName": "m2 - case 0 - 4 - 2",
     "dataset": "cifar-10",
     "testSetPerClient": 0.5,
     "validationSetPerClient": 0.0,
     "numClient" : 12,
     "clientsPerCuda": 4,
     "updateClientsPerRound": 12,
-    "seed": 1234,
+    "seed": 9999,
     "startingCuda": 0,
     "participantsInfo": "0:0.3|1:0.3|2:0.3",
     "errorFilePath": "./util/errorModel_1",
@@ -56,7 +56,7 @@
       "lr_decay_step": 1,
       "lr_decay": 1.0,
       "momentum": 0.9,
-      "epoch": 5,
+      "epoch": 20,
       "batchSize": 15,
       "delayMin": 0,
       "delayMax": 0.03,
@@ -78,7 +78,7 @@
       "lr_decay_step": 1,
       "lr_decay": 1.0,
       "momentum": 0.9,
-      "epoch": 5,
+      "epoch": 20,
       "batchSize": 15,
       "delayMin": 0.3,
       "delayMax": 1.0,
@@ -100,7 +100,7 @@
       "lr_decay_step": 1,
       "lr_decay": 1.0,
       "momentum": 0.9,
-      "epoch": 5,
+      "epoch": 20,
       "batchSize": 15,
       "delayMin": 0.3,
       "delayMax": 1.0,
@@ -112,7 +112,7 @@
     }
   ],
   "server": {
-    "flRound": 25,
+    "flRound": 300,
     "examinData_batchSize": 50
   }
 }
