@@ -4,6 +4,7 @@ import os
 import sys
 import time
 from random import shuffle
+import random
 import numpy as np
 from client.client import Client
 from dataPrepare.iid import iidSplit
@@ -54,6 +55,15 @@ if __name__ == "__main__":
     updateClientsPerRound = basicConfig['updateClientsPerRound']
     startingCuda = basicConfig['startingCuda']
 
+    seed = basicConfig['seed']
+    torch.manual_seed(seed)  # torch를 거치는 모든 난수들의 생성순서를 고정한다
+    torch.cuda.manual_seed(seed)  # cuda를 사용하는 메소드들의 난수시드는 따로 고정해줘야한다
+    torch.cuda.manual_seed_all(seed)  # if use multi-GPU
+    torch.backends.cudnn.deterministic = True  # 딥러닝에 특화된 CuDNN의 난수시드도 고정
+    torch.backends.cudnn.benchmark = False
+    np.random.seed(seed)  # numpy를 사용할 경우 고정
+    random.seed(seed)  # 파이썬 자체 모듈 random 모듈의 시드 고정
+
     serverScoreFolderPath = basicConfig["serverScoreFolderRoot"] + "/" + basicConfig['testName'] + "-" + str(round(time.time()))
     clientScoreFolderPath = basicConfig["clientScoreFolderRoot"] + "/" + basicConfig['testName'] + "-" + str(round(time.time()))
     print('Scores are saved to...')
@@ -71,6 +81,7 @@ if __name__ == "__main__":
     dltAllFiles(basicConfig['receivedProfilePath'])
 
     print('Count of using GPUs:', torch.cuda.device_count())
+    testName = basicConfig['testName']
 
     clientDataSetSize = len(y_train)
     clientTestDatasetSize = int(round(clientDataSetSize * testSetPerClient))
@@ -85,7 +96,7 @@ if __name__ == "__main__":
     # clientsDictTrain = custom_split_non_iid(clientDataset, classes, numClients, 9, 9, 0.15, basicConfig['seed'])
     clientsDatasetDict = difference_bias_by_type(clientDataset, classes, configPath="./config/datasetConfig/dataConfig1.json", seed=basicConfig['seed'])
     # print(len(clientsDict[0]))
-    showDistribution(clientsDatasetDict, classes, 'clientsDictTrain')
+    showDistribution(clientsDatasetDict, classes, f'clientsDataset {testName} - {int(round(time.time()))}')
     # showDistribution(clientsDictTest, classes, 'clientsDictTest')
 
     multiprocessing.set_start_method('spawn')

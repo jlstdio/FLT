@@ -30,26 +30,44 @@ def showDistribution(clientsDict, classes, name):
     plt.savefig(f'{name}.pdf')
 
 
-def scoring(round_num, scorePath, fileName, all_targets, all_outputs):
-
+def scoring(round_num, scorePath, fileName, all_targets, all_outputs, acc, loss):
+    # 키 설정
     target_key = f'target_{round_num}'
     output_key = f'output_{round_num}'
-    scoreFilePath = scorePath + f'/{fileName}'
+    scoreFilePath = os.path.join(scorePath, fileName)
+
+    acc_key = 'acc'
+    loss_key = 'loss'
+    prefFilePath = os.path.join(scorePath, f'pref_{fileName}')
+
+    # 디렉토리 생성
+    os.makedirs(scorePath, exist_ok=True)
+
+    # 점수 파일 처리
+    score_df = pd.DataFrame({
+        target_key: all_targets,
+        output_key: all_outputs
+    })
 
     if not os.path.isfile(scoreFilePath):
-        os.makedirs(scorePath, exist_ok=True)
-        df = pd.DataFrame({
-            target_key: all_targets,
-            output_key: all_outputs
-        })
-        df.to_csv(scoreFilePath, index=False)
+        # 파일이 없으면 새로 생성하고 헤더 포함
+        score_df.to_csv(scoreFilePath, index=False)
     else:
-        existing_df = pd.read_csv(scoreFilePath)
+        # 파일이 있으면 이어서 저장 (헤더 제외)
+        score_df.to_csv(scoreFilePath, mode='a', header=False, index=False)
 
-        existing_df[target_key] = all_targets
-        existing_df[output_key] = all_outputs
+    # 성능(pref) 파일 처리
+    pref_df = pd.DataFrame({
+        acc_key: [acc],
+        loss_key: [loss]
+    })
 
-        existing_df.to_csv(scoreFilePath, index=False)
+    if not os.path.isfile(prefFilePath):
+        # 파일이 없으면 새로 생성하고 헤더 포함
+        pref_df.to_csv(prefFilePath, index=False)
+    else:
+        # 파일이 있으면 이어서 저장 (헤더 제외)
+        pref_df.to_csv(prefFilePath, mode='a', header=False, index=False)
 
 # state_dict에서 'module.' 제거하는 함수
 def remove_module_prefix(state_dict):

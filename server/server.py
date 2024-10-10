@@ -6,11 +6,11 @@ from multiprocessing import Process
 import os
 import time
 import numpy as np
-from numba.cuda import is_available
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 import torch
-from examinModel import examinModel
+
+from server.examinModel import examinModel
 from util.util import dltAllFiles
 
 
@@ -110,9 +110,13 @@ class Server(Process):
         self.roundStartTime = 0
         self.scorePath = scorePath
 
-        torch.manual_seed(self.seed)
-        np.random.seed(self.seed)
-        random.seed(self.seed)
+        torch.manual_seed(self.seed)  # torch를 거치는 모든 난수들의 생성순서를 고정한다
+        torch.cuda.manual_seed(self.seed)  # cuda를 사용하는 메소드들의 난수시드는 따로 고정해줘야한다
+        torch.cuda.manual_seed_all(self.seed)  # if use multi-GPU
+        torch.backends.cudnn.deterministic = True  # 딥러닝에 특화된 CuDNN의 난수시드도 고정
+        torch.backends.cudnn.benchmark = False
+        np.random.seed(self.seed)  # numpy를 사용할 경우 고정
+        random.seed(self.seed)  # 파이썬 자체 모듈 random 모듈의 시드 고정
 
         # mkdir
         receivedPath = str(self.basicConfig['receivedPthPath'])
@@ -200,7 +204,7 @@ class Server(Process):
 
         examinManager = examinModel(self.internalIdWithClients, self.cudaId, self.examinDataset,
                                     self.serverConfig['examinData_batchSize'], self.rootModel,
-                                    f'{rootModelPath}/rootModel.pth', self.currentRound.value, self.scorePath, '/aggregate.csv')
+                                    f'{rootModelPath}/rootModel.pth', self.seed, self.currentRound.value, self.scorePath, 'aggregate.csv')
         examinManager.loadData()
         loss, acc = examinManager.examin()
 
