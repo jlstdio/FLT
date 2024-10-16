@@ -273,6 +273,10 @@ class Server(Process):
         if self.targetRound > self.currentRound.value:
             self.negotiate()  # self.pickClients()
             print(f'round is now {self.currentRound.value}')
+        elif self.targetRound == self.currentRound.value:
+            print(f'server round is over {self.currentRound.value}/{self.targetRound}')
+            print(f'ending sequence')
+            self.currentRound.value += 1
 
     def negotiate(self):
         dltAllFiles(self.basicConfig['clientsNegotiationFolderPath'])
@@ -479,3 +483,4 @@ class Server(Process):
         except KeyboardInterrupt:
             observer.stop()
         observer.join()
+        print('server is terminating')

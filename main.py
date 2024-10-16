@@ -37,12 +37,8 @@ cifar_dataloader = cifar10Dataloader(data_dir)
 (x_train, y_train), (x_test, y_test) = cifar_dataloader.load_data()  # 32 * 32 * 3 data
 
 # IMPLEMENTATION ###############################
-
-if __name__ == "__main__":
-
-    configPath = sys.argv[1]  # './config1.json' | './config1.json' | ...
-
-    with open(configPath, 'r') as file:
+def runner(networkConfigPath, dataConfigPath):
+    with open(networkConfigPath, 'r') as file:
         config = json.load(file)
 
     clientConfig = config['clients']
@@ -64,8 +60,10 @@ if __name__ == "__main__":
     np.random.seed(seed)  # numpy를 사용할 경우 고정
     random.seed(seed)  # 파이썬 자체 모듈 random 모듈의 시드 고정
 
-    serverScoreFolderPath = basicConfig["serverScoreFolderRoot"] + "/" + basicConfig['testName'] + "-" + str(round(time.time()))
-    clientScoreFolderPath = basicConfig["clientScoreFolderRoot"] + "/" + basicConfig['testName'] + "-" + str(round(time.time()))
+    serverScoreFolderPath = basicConfig["serverScoreFolderRoot"] + "/" + basicConfig['testName'] + "-" + str(
+        round(time.time()))
+    clientScoreFolderPath = basicConfig["clientScoreFolderRoot"] + "/" + basicConfig['testName'] + "-" + str(
+        round(time.time()))
     print('Scores are saved to...')
     print(serverScoreFolderPath)
     print(clientScoreFolderPath)
@@ -94,7 +92,9 @@ if __name__ == "__main__":
     # clientsDict = dirichlet_equal_split(clientDataset, classes, 0.25, numClients, basicConfig['seed'])
     # clientsDictTrain = custom_split_non_iid(clientDataset, classes, numClients, 9, 9, 0.15, basicConfig['seed'])
     # clientsDictTrain = custom_split_non_iid(clientDataset, classes, numClients, 9, 9, 0.15, basicConfig['seed'])
-    clientsDatasetDict = difference_bias_by_type(clientDataset, classes, configPath="./config/datasetConfig/dataConfig1.json", seed=basicConfig['seed'])
+    clientsDatasetDict = difference_bias_by_type(clientDataset, classes,
+                                                 configPath=dataConfigPath,
+                                                 seed=basicConfig['seed'])
     # print(len(clientsDict[0]))
     showDistribution(clientsDatasetDict, classes, f'clientsDataset {testName} - {int(round(time.time()))}')
     # showDistribution(clientsDictTest, classes, 'clientsDictTest')
@@ -102,14 +102,14 @@ if __name__ == "__main__":
     multiprocessing.set_start_method('spawn')
     clientsPerCuda = basicConfig['clientsPerCuda']
     # modelToLoad = nn.DataParallel(testNN())
-    modelToLoad = [testNN() for i in range (numClients + 2)]
+    modelToLoad = [testNN() for i in range(numClients + 2)]
     serverCudaId = updateClientsPerRound // clientsPerCuda
     flModel = fedAvg(modelToLoad[numClients + 1])
     # modelToLoad = resNet50().getModel()
 
-    wandbClient = wandbClient(config=config)
-    wandbQueue = wandbClient.getQueue()
-    wandbClient.start()
+    wandbClientServer = wandbClient(config=config)
+    wandbQueue = wandbClientServer.getQueue()
+    wandbClientServer.start()
 
     network = FLNetwork(numClients=numClients,
                         basicConfig=basicConfig,
@@ -146,3 +146,18 @@ if __name__ == "__main__":
 
     server.join()
     network.join()
+
+    print('end of runner')
+
+
+if __name__ == "__main__":
+    if len(sys.argv)!= 3:
+        print('wrong argument inputs')
+        exit()
+    network_configPath = sys.argv[1]  # './config1.json' | './config1.json' | ...
+    data_configPath = sys.argv[2]
+    # configPathList = ['./config/networkConfig/config9.json']
+    # ./config/datasetConfig/dataConfig1.json
+    runner(network_configPath, data_configPath)
+
+    print('end of program')

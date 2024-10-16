@@ -3,13 +3,14 @@ import time
 from multiprocessing import Process
 import wandb
 
+
 class wandbClient(Process):
     def __init__(self, config):
         super().__init__()
         self.q = multiprocessing.Queue()
         basicConfig = config['basicInfo']
         clientConfig = config['clients']
-        self.wandbClient = wandb.init(project=basicConfig['projectName'],config=config)
+        self.wandbClient = wandb.init(project=basicConfig['projectName'], config=config)
         self.wandbClient.define_metric("custom_step")
         self.wandbClient.define_metric("time")
         self.registerClientMetric("server/performance/server aggregated validation loss")
@@ -37,11 +38,14 @@ class wandbClient(Process):
             self.registerClientMetric(f"client/metadata/batchsize/client{i} batchSize")
 
         for typeNum in range(len(clientConfig)):
-            self.registerClientMetric(f"clientType/performance/pre-validation/loss/client type{typeNum} validation loss")
-            self.registerClientMetric(f"clientType/performance/pre-validation/accuracy/client type{typeNum} validation accuracy")
+            self.registerClientMetric(
+                f"clientType/performance/pre-validation/loss/client type{typeNum} validation loss")
+            self.registerClientMetric(
+                f"clientType/performance/pre-validation/accuracy/client type{typeNum} validation accuracy")
 
             self.registerClientMetric(f"clientType/performance/validation/loss/client type{typeNum} validation loss")
-            self.registerClientMetric(f"clientType/performance/validation/accuracy/client type{typeNum} validation accuracy")
+            self.registerClientMetric(
+                f"clientType/performance/validation/accuracy/client type{typeNum} validation accuracy")
             self.registerClientMetric(f"clientType/efficiency/waitingTime/client type{typeNum} avg waiting time")
 
     def registerClientMetric(self, key):
