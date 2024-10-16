@@ -538,3 +538,4 @@ $RECYCLE.BIN/
 *.lnk
 
 # End of https://www.toptal.com/developers/gitignore/api/intellij,intellij+all,intellij+iml,pycharm,macos,python,windows
+testResult/
