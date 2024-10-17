@@ -12,7 +12,7 @@ class testNN(nn.Module):
         self.conv3 = nn.Conv2d(64, 64, kernel_size=3)
         self.relu = nn.ReLU()
         self.fc = nn.Linear(64 * 4 * 4, 10)  # 64는 채널 수, 4*4는 마지막 풀링 레이어의 출력 크기
-        self.softmax = nn.Softmax(dim=1)
+        # self.softmax = nn.Softmax(dim=1)
 
         self._initialize_weights()  # He 초기화 함수 호출
 
@@ -35,5 +35,5 @@ class testNN(nn.Module):
         x = self.relu(self.conv3(x))  # (None, 64, 4, 4)
         x = x.reshape(x.size(0), -1)
         x = self.fc(x)  # (None, 10)
-        x = self.softmax(x)  # (None, 10)
+        # x = self.softmax(x)  # (None, 10)
         return x

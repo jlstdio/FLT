@@ -20,10 +20,12 @@ class examinModel:
         model_state_dict = torch.load(pthPath, map_location=self.device)  # torch.load(path, map_location=torch.device('cpu'))
         self.model.load_state_dict(model_state_dict)
         self.scoreFileName = scoreFileName
-        self.criterion = nn.BCELoss()
+
+        self.criterion = nn.CrossEntropyLoss()
+        # self.criterion = nn.BCELoss()
+
         self.scorePath = scorePath
         self.round = curRound
-        # self.criterion = nn.CrossEntropyLoss()
 
         torch.manual_seed(seed)  # torch를 거치는 모든 난수들의 생성순서를 고정한다
         torch.cuda.manual_seed(seed)  # cuda를 사용하는 메소드들의 난수시드는 따로 고정해줘야한다
@@ -70,10 +72,11 @@ class examinModel:
             total_loss = 0
             for inputs, targets in self.val_loader:
                 inputs = inputs.to(self.device)
-                targets = targets.to(self.device)
+                targets = targets.long().to(self.device)
                 outputs = self.model(inputs)
+                outputs_p = torch.softmax(outputs, dim=1)
 
-                npOutputs = torch.argmax(outputs, dim=1)
+                npOutputs = torch.argmax(outputs_p, dim=1)
                 npTargets = torch.argmax(targets, dim=1)
                 npOutputs = np.array(npOutputs.cpu())
                 npTargets = np.array(npTargets.cpu())
@@ -90,7 +93,7 @@ class examinModel:
                 total_loss += loss.item()
 
                 all_targets.extend(targets.detach().cpu().numpy())
-                all_outputs.extend(outputs.detach().cpu().numpy())
+                all_outputs.extend(outputs_p.detach().cpu().numpy())
 
             avg_loss = total_loss / len(self.val_loader)
             acc /= count

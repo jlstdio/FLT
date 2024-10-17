@@ -12,7 +12,7 @@ import torch
 import torch.nn.functional as F
 import numpy as np
 import os
-
+from torch.optim.lr_scheduler import CosineAnnealingLR
 from util.util import scoring
 
 
@@ -67,8 +67,9 @@ class Client(Process):
             self.model = nn.DataParallel(self.model)
         '''
 
-        self.criterion = nn.BCELoss()
-        # self.criterion = nn.CrossEntropyLoss()
+        # self.criterion = nn.BCELoss()
+        # self.criterion = nn.BCEWithLogitsLoss()
+        self.criterion = nn.CrossEntropyLoss()
         '''
         if is_available():
             set_per_process_memory_fraction(self.config['memFrac'], self.device.index)
@@ -121,7 +122,22 @@ class Client(Process):
                                      shuffle=True)
 
     def train(self, epochs=10):
-        lr = self.clientProfile['clientMetadata']['lr']
+        lr_origin = self.clientProfile['clientMetadata']['lr']
+        T = self.clientProfile['clientMetadata']['T']
+        lr = round(lr_origin / T, 6)
+
+        key_lr_origin = f"client/metadata/learningRate-origin/client{self.client_internalId} origin lr"
+        key_lr_adjusted = f"client/metadata/learningRate-adjusted/client{self.client_internalId} adjusted lr"
+        key_temperature = f"client/metadata/temperature/client{self.client_internalId} T"
+
+        logList_lr_origin = [key_lr_origin, lr_origin, self.round]
+        logList_lr_adjusted = [key_lr_adjusted, lr, self.round]
+        logList_temperature = [key_temperature, T, self.round]
+
+        self.wandbQueue.put(logList_lr_origin)
+        self.wandbQueue.put(logList_lr_adjusted)
+        self.wandbQueue.put(logList_temperature)
+
         logList = None
         self.optimizer = optim.SGD(self.model.parameters(), lr=lr)
         print(f'client{self.client_internalId} lr at {lr}')
@@ -134,9 +150,12 @@ class Client(Process):
             running_loss = 0.0
             for inputs, targets in self.train_loader:
                 inputs = inputs.to(self.device)
-                targets = targets.to(self.device)
-                outputs = self.model(inputs)
+                # targets = targets.to(self.device)
+                targets = targets.long().to(self.device)
+                outputs = self.model(inputs) / T
+                outputs_p = torch.softmax(outputs, dim=1)
                 # outputs = torch.argmax(outputs, dim=1)
+
                 loss = self.criterion(outputs, targets)
                 self.optimizer.zero_grad()
                 loss.backward()
@@ -152,7 +171,7 @@ class Client(Process):
                     time.sleep(randTime)
 
                 all_targets.extend(targets.detach().cpu().numpy())
-                all_outputs.extend(outputs.detach().cpu().numpy())
+                all_outputs.extend(outputs_p.detach().cpu().numpy())
 
             avg_loss = running_loss / len(self.train_loader)
             key_loss = f"client/performance/train/loss/client{self.client_internalId} training loss"
@@ -163,10 +182,25 @@ class Client(Process):
 
             # self.wandbClient.sendLog(key=f"client{self.client_internalId} training loss", data=avg_loss)
             # print(f"Client {self.client_internalId} Epoch [{epoch + 1}/{epochs}], Loss: {avg_loss:.4f}")
-        if self.serverRound.value % self.config['lr_decay_step'] == 0 and self.serverRound.value != 0:
-            lr *= self.config['lr_decay']
 
-        self.clientProfile['clientMetadata']['lr'] = round(lr, 6)
+        # scale by 1 / T before sending it to server -> to adjust norm difference with different clients
+        with torch.no_grad():
+            for param in self.model.parameters():
+                param.mul_(1.0 / T)
+        print(f'client{self.client_internalId} model weights scaled by 1/T={1.0 / T}')
+
+        # learning rate scheduling ----------------------- #
+        # scheduler = CosineAnnealingLR(self.optimizer, T_max=100, eta_min=1e-6)
+        # scheduled_lr = self.optimizer.param_groups[0]['lr']
+
+        # lr_origin = self.clientProfile['clientMetadata']['lr']
+        # T = self.clientProfile['clientMetadata']['T']
+
+        # if self.serverRound.value % self.config['lr_decay_step'] == 0 and self.serverRound.value != 0:
+        #     lr *= self.config['lr_decay']
+
+        # self.clientProfile['clientMetadata']['lr'] = round(lr, 6)
+        # ------------------------------------------------ #
 
         # round_num = self.clientProfile["etc"]["pickedCount"]
         # scoring(round_num, self.scorePath, f"/train.csv", all_targets, all_outputs)
@@ -185,9 +219,11 @@ class Client(Process):
             total_loss = 0
             for inputs, targets in self.val_loader:
                 inputs = inputs.to(self.device)
-                targets = targets.to(self.device)
+                targets = targets.long().to(self.device)
                 outputs = self.model(inputs)
-                npOutputs = torch.argmax(outputs, dim=1)
+                outputs_p = torch.softmax(outputs, dim=1)
+
+                npOutputs = torch.argmax(outputs_p, dim=1)
                 npTargets = torch.argmax(targets, dim=1)
                 npOutputs = np.array(npOutputs.cpu())
                 npTargets = np.array(npTargets.cpu())
@@ -203,7 +239,7 @@ class Client(Process):
                 total_loss += loss.item()
 
                 all_targets.extend(targets.detach().cpu().numpy())
-                all_outputs.extend(outputs.detach().cpu().numpy())
+                all_outputs.extend(outputs_p.detach().cpu().numpy())
 
             avg_loss = total_loss / len(self.val_loader)
             acc /= count
@@ -239,6 +275,7 @@ class Client(Process):
             # default_metadata에 필요한 key와 값을 추가
             default_metadata["clientMetadata"]["delayMax"] = self.config['delayMax']
             default_metadata["clientMetadata"]["delayMin"] = self.config['delayMin']
+            default_metadata["clientMetadata"]["T"] = self.config['temperature']
             default_metadata["clientMetadata"]["lr"] = self.config['lr']
             default_metadata["clientMetadata"]["epoch"] = self.config['epoch']
             default_metadata["clientMetadata"]["batchSize"] = self.config['batchSize']
@@ -279,6 +316,8 @@ class Client(Process):
             with open(rxPath, 'r') as file:
                 negotiatedFile = json.load(file)
                 default_metadata["clientMetadata"]["lr"] = negotiatedFile['clientMetadata']['lr']
+                default_metadata["clientMetadata"]["T"] = negotiatedFile['clientMetadata']['T']
+                default_metadata["clientMetadata"]["lr_T_constant"] = round(default_metadata["clientMetadata"]["lr"] / default_metadata["clientMetadata"]["T"], 6)
                 default_metadata["clientMetadata"]["epoch"] = negotiatedFile['clientMetadata']['epoch']
                 default_metadata["clientMetadata"]["batchSize"] = negotiatedFile['clientMetadata']['batchSize']
                 default_metadata["clientMetadata"]["dataSize"] = negotiatedFile['clientMetadata']['dataSize']

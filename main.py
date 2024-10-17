@@ -22,7 +22,7 @@ import torch
 import wandb
 from torch import nn
 from util.util import showDistribution, dltAllFiles
-from wandbClient import wandbClient
+from util.wandbClient import wandbClient
 
 # train_img_path = './dataset/mnist/train/train-images-idx3-ubyte'
 # train_label_path = './dataset/mnist/train/train-labels-idx1-ubyte'
