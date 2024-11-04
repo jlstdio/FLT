@@ -7,11 +7,22 @@ import pandas as pd
 def showDistribution(clientsDict, classes, name):
     num_clients = len(clientsDict)
     class_counts = {i: {cls: 0 for cls in classes} for i in range(num_clients)}
+    totalDistributionSet = {}
 
     # 각 클라이언트의 클래스별 데이터 개수 계산
     for client, data in clientsDict.items():
         for cls, _ in data:
             class_counts[client][cls] += 1
+
+    # save dataset distribution of clients
+    for client in range(num_clients):
+        clientDistributionSet = []
+
+        for cls in classes:
+            if class_counts[client][cls] > 0:
+                clientDistributionSet.append(cls)
+
+        totalDistributionSet[client] = clientDistributionSet
 
     # 플롯 그리기
     fig, axes = plt.subplots(1, num_clients, figsize=(15, 5), sharey=True)
@@ -28,6 +39,7 @@ def showDistribution(clientsDict, classes, name):
     plt.tight_layout()
     # plt.show()
     plt.savefig(f'{name}.pdf')
+    return totalDistributionSet
 
 
 def scoring(round_num, scorePath, fileName, all_targets, all_outputs, acc, loss):

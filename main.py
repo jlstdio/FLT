@@ -29,9 +29,6 @@ from util.wandbClient import WandbClient
 
 def runner(networkConfigPath, dataConfigPath):
 
-    cifar_dataloader = cifar100Dataloader()
-    (x_train, y_train), (x_test, y_test) = cifar_dataloader.load_data()
-
     with open(networkConfigPath, 'r') as file:
         config = json.load(file)
 
@@ -53,6 +50,13 @@ def runner(networkConfigPath, dataConfigPath):
     torch.backends.cudnn.benchmark = False
     np.random.seed(seed)
     random.seed(seed)
+
+    dataloader = None
+    if basicConfig['dataset'] == 'cifar-10':
+        dataloader = cifar10Dataloader('./dataset/cifar10')
+    elif basicConfig['dataset'] == 'cifar-100':
+        dataloader = cifar100Dataloader('./dataset/cifar100')
+    (x_train, y_train), (x_test, y_test) = dataloader.load_data()
 
     resultRootPath = basicConfig["resultRoot"] + "/" + basicConfig['testName'] + "-" + str(round(time.time()))
     serverScoreFolderPath = resultRootPath + "/" + basicConfig["serverScoreFolderRoot"]
@@ -82,10 +86,10 @@ def runner(networkConfigPath, dataConfigPath):
     # clientsDatasetDict = dirichletSplit(clientDataset, classes, numClients, dataConfigPath, basicConfig['seed'])
     # clientsDictTrain = custom_split_non_iid(clientDataset, classes, numClients, 9, 9, 0.15, basicConfig['seed'])
     # clientsDictTrain = custom_split_non_iid(clientDataset, classes, numClients, 9, 9, 0.15, basicConfig['seed'])
-    clientsDatasetDict = difference_bias_by_type(clientDataset, classes, configPath=dataConfigPath, seed=basicConfig['seed'])
-    # clientsDatasetDict = pathologicalSplit(clientDataset, classes, numClients, configPath=dataConfigPath, seed=basicConfig['seed'])
+    # clientsDatasetDict = difference_bias_by_type(clientDataset, classes, configPath=dataConfigPath, seed=basicConfig['seed'])
+    clientsDatasetDict = pathologicalSplit(clientDataset, classes, numClients, configPath=dataConfigPath, seed=basicConfig['seed'])
     distributionSavePath = f'{resultRootPath}/clientsDataset {testName} - {int(round(time.time()))}'
-    showDistribution(clientsDatasetDict, classes, distributionSavePath)
+    totalDistributionSet = showDistribution(clientsDatasetDict, classes, distributionSavePath)
     # showDistribution(clientsDictTest, classes, 'clientsDictTest')
 
     clientsPerCuda = basicConfig['clientsPerCuda']
@@ -131,7 +135,8 @@ def runner(networkConfigPath, dataConfigPath):
                     startingCuda=startingCuda,
                     pickedClientsList=pickedClients,
                     resultPath=resultRootPath,
-                    wandbQueue=wandbQueue)
+                    wandbQueue=wandbQueue,
+                    totalDistributionSet=totalDistributionSet)
 
     server.start()
 
@@ -147,21 +152,15 @@ def runner(networkConfigPath, dataConfigPath):
     print('end of runner')
 
 
+
 if __name__ == "__main__":
     multiprocessing.set_start_method('spawn')
+
     networkConfigRoot = './config/networkConfig'
     dataConfigRoot = './config/datasetConfig'
 
-    networkConfig_PathList = [f'{networkConfigRoot}/config_m3 - test 2-1.json',
-                              f'{networkConfigRoot}/config_m3 - test 2-3.json',
-                              f'{networkConfigRoot}/config_m3 - test 2-4.json',
-                              f'{networkConfigRoot}/config_m3 - test 2-5,json',
-                              f'{networkConfigRoot}/config_m3 - test 2-6.json']
-    dataConfig_PathList = [f'{dataConfigRoot}/dataConfig1.json',
-                           f'{dataConfigRoot}/dataConfig1.json'
-                           f'{dataConfigRoot}/dataConfig1.json'
-                           f'{dataConfigRoot}/dataConfig1.json'
-                           f'{dataConfigRoot}/dataConfig1.json']
+    networkConfig_PathList = [f'{networkConfigRoot}/config_m5 - test 1-1-.json']
+    dataConfig_PathList = [f'{dataConfigRoot}/dataConfig_pathological.json']
 
     for network_configPath, data_configPath in zip(networkConfig_PathList, dataConfig_PathList):
         print(f'running with {network_configPath} | {data_configPath}')
