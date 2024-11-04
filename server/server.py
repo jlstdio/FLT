@@ -3,6 +3,7 @@ import json
 import math
 import random
 import shutil
+import threading
 from multiprocessing import Process
 import os
 import time
@@ -111,7 +112,9 @@ class Server(Process):
         self.resultPath = resultPath
         self.scorePath = resultPath + "/" + basicConfig["serverScoreFolderRoot"]
         self.totalDistributionSet = totalDistributionSet
+
         self.recentPickedClasses = []
+        self.recentPickedClasses_lock = threading.Lock()
 
         torch.manual_seed(self.seed)
         torch.cuda.manual_seed(self.seed)
@@ -134,6 +137,17 @@ class Server(Process):
         del self.rootModel
 
         print("Server online")
+
+    def __getstate__(self):
+        state = self.__dict__.copy()
+        # Remove the lock from the state to avoid pickling errors
+        del state['recentPickedClasses_lock']
+        return state
+
+    def __setstate__(self, state):
+        self.__dict__.update(state)
+        # Reinitialize the lock after unpickling
+        self.recentPickedClasses_lock = threading.Lock()
 
     def process_new_file(self, file_name):
         try:
@@ -195,117 +209,110 @@ class Server(Process):
         for filePath in pth_files:
             self.flModel.registerPth(filePath)
 
-        # TODO : memorized 된 model 중에 이번 round에 해당되지 않는 class를 가진 clients를 뽑아서 저장.
-        '''
-        우선 M = self.serverConfig['server_round_mem']으로 변수를 가지고 있는다.
-        M은 최근 몇 round의 모델까지 기억하고 가져오는 것을 허가할지에 대한 정보이다.
-        
-        self.recentPickedClasses 변수로 최근 round에 뽑힌 clients의 classes를 가져올 수 있음.
-        ->    self.recentPickedClasses[-M:-1]  : 현재 round를 제외한 최근 마지막 M 개의 class 정보
-        ->    self.recentPickedClasses[-1] : 현재 client의 class 정보
-        
-        현재 round에 pick된 client의 정보 self.recentPickedClasses[-1] 정보를 기준으로
-        이전에 뽑혔던 최근 N개의 client 정보인 self.recentPickedClasses[-M:-1]의 정보에서
-        round에 pick된 client와 겹치지 않거나 최대한 겹치지 않는 client의 pth 모델의 path 정보를 최대 10개 랜덤하게 가져와서
-        self.flModel.registerPth(filePath) 코드로 추가한다.
-        
-        최근 N라운드 동안 기억되는 모델들은 
-        self.basicConfig['memorizedPthPath]의 위치에 {client_sessionlId}_round{round}.pth 의 형태로 pth가 있을 예정이다.
-        '''
-        M = self.serverConfig['server_round_mem']
         memorized_pth_path = self.basicConfig['memorizedPthPath']
-        os.makedirs(memorized_pth_path, exist_ok=True)
+        if self.basicConfig['bartender'] and len(os.listdir(memorized_pth_path)) > 0:
+            with self.recentPickedClasses_lock:
+                # memorized 된 model 중에 이번 round에 해당되지 않는 class를 가진 clients를 뽑아서 저장.
+                M = self.serverConfig['server_round_mem']
+                os.makedirs(memorized_pth_path, exist_ok=True)
 
-        # 최근 M 라운드의 클래스 집합
-        recent_picked_classes = set()
-        for class_list in self.recentPickedClasses[-M:-1]:
-            recent_picked_classes.update(class_list)
+                num_past_rounds = len(self.recentPickedClasses)
 
-        # 현재 라운드의 클래스 집합
-        current_round_classes = set(self.recentPickedClasses[-1])
+                if num_past_rounds < 2:
+                    # 리스트에 1개의 정보만 있을 때는 memorized pth와 관련된 작업을 수행하지 않음
+                    print("Only current round's classes present. Skipping memorized pth processing.")
+                else:
+                    # 참조할 과거 라운드의 수를 결정
+                    num_recent = min(M, num_past_rounds - 1)
 
-        # memorizedPthPath에서 모든 pth 파일 가져오기
-        memorized_files = [
-            os.path.join(memorized_pth_path, f) for f in os.listdir(memorized_pth_path) if f.endswith('.pth')
-        ]
+                    # 최근 num_recent 라운드의 클래스 집합을 가져옴
+                    recent_picked_classes = set()
+                    for class_list in self.recentPickedClasses[-num_recent - 1:-1]:
+                        recent_picked_classes.update(class_list)
 
-        eligible_files = []
+                    # 현재 라운드의 클래스 집합
+                    current_round_classes = set(self.recentPickedClasses[-1])
 
-        for mem_file in memorized_files:
-            mem_file_name = os.path.basename(mem_file)
-            try:
-                # 파일 이름 형식: {client_sessionId}_round{round}.pth
-                parts = mem_file_name.split('_round')
-                client_session_id = int(parts[0])
-                # round_num = int(parts[1].replace('.pth', ''))  # 라운드 번호는 필요 없을 수 있음
+                    # memorizedPthPath에서 모든 pth 파일 가져오기
+                    memorized_files = [
+                        os.path.join(memorized_pth_path, f) for f in os.listdir(memorized_pth_path) if f.endswith('.pth')
+                    ]
 
-                # 클라이언트의 클래스 정보 가져오기
-                client_classes = set(self.totalDistributionSet.get(client_session_id, []))
+                    eligible_files = []
 
-                # 현재 라운드 클래스와 최근 M 라운드 클래스와 겹치지 않는지 확인
-                if not client_classes.intersection(current_round_classes) and not client_classes.intersection(
-                        recent_picked_classes):
-                    eligible_files.append(mem_file)
+                    for mem_file in memorized_files:
+                        mem_file_name = os.path.basename(mem_file)
+                        try:
+                            # 파일 이름 형식: {client_sessionId}_round{round}.pth
+                            parts = mem_file_name.split('_round')
+                            client_session_id = int(parts[0])
+                            # round_num = int(parts[1].replace('.pth', ''))  # 라운드 번호는 필요 없을 수 있음
 
-            except (IndexError, ValueError):
-                print(f"Invalid memorized file name format: {mem_file_name}")
-                continue
+                            # 클라이언트의 클래스 정보 가져오기
+                            client_classes = set(self.totalDistributionSet.get(client_session_id, []))
 
-        # 최대 10개 랜덤 선택
-        selected_files = random.sample(eligible_files, min(10, len(eligible_files)))
+                            # 현재 라운드 클래스와 최근 num_recent 라운드 클래스와 겹치지 않는지 확인
+                            if not client_classes.intersection(current_round_classes) and not client_classes.intersection(
+                                    recent_picked_classes):
+                                eligible_files.append(mem_file)
 
-        for filePath in selected_files:
-            self.flModel.registerPth(filePath)
-            print(f"Registered memorized model: {filePath}")
+                        except (IndexError, ValueError):
+                            print(f"Invalid memorized file name format: {mem_file_name}")
+                            continue
+
+                    # 최대 'maximum_pth_to_mix'개 랜덤 선택
+                    max_mix = self.serverConfig.get('maximum_pth_to_mix', 10)  # 기본값 10 설정
+                    selected_files = random.sample(eligible_files, min(max_mix, len(eligible_files)))
+
+                    for filePath in selected_files:
+                        self.flModel.registerPth(filePath)
+                        print(f"Registered memorized model: {filePath}")
 
         # aggregating model
         self.rootModel = copy.deepcopy(self.flModel.aggregate())
+        # #################
 
-        # TODO : Aggregate 끝난 후 -> 이번 round 에 가져온 models들 self.basicConfig['memorizedPthPath]의 위치에 옮기기
-        '''
-        이번 round 에 가져온 models들 self.basicConfig['memorizedPthPath]의 위치에 옮긴후
-        memorizedPthPath에 가장 오래된 (= round가 작은) model들은 지운다.
-        {client_sessionlId}_round{round}.pth의 형태로 저장되어있기에 _를 기준으로 [1] index의 정보에서 round와 .pth를 지운 순수한 숫자 데이터로 round를 식별하여 오래된 라운드 모델들은 삭제하면 된다.
-        현재 라운드에 대한 정보는 self.currentRound.value 로 가져올 수 있다.
-        '''
-        # 이번 round에 가져온 모델들을 memorizedPthPath로 이동
-        for filePath in pth_files:
-            fileName = os.path.basename(filePath)
-            client_id = int(fileName.split('_')[0])
-            new_file_name = f"{client_id}_round{self.currentRound.value}.pth"
-            destination = os.path.join(memorized_pth_path, new_file_name)
-            shutil.move(filePath, destination)
-            print(f"Moved {filePath} to {destination}")
+        if self.basicConfig['bartender']:
+            M = self.serverConfig['server_round_mem']
+            # Aggregate 끝난 후 -> 이번 round 에 가져온 models들 self.basicConfig['memorizedPthPath]의 위치에 옮기기
+            # 이번 round에 가져온 모델들을 memorizedPthPath로 이동
+            for filePath in pth_files:
+                fileName = os.path.basename(filePath)
+                client_id = int(fileName.split('_')[0])
+                new_file_name = f"{client_id}_round{self.currentRound.value}.pth"
+                destination = os.path.join(memorized_pth_path, new_file_name)
+                shutil.move(filePath, destination)
+                print(f"Moved {filePath} to {destination}")
 
-        # memorizedPthPath에서 오래된 모델 삭제 (최신 M 라운드만 유지)
-        all_memorized_files = [
-            os.path.join(memorized_pth_path, f) for f in os.listdir(memorized_pth_path) if f.endswith('.pth')
-        ]
+            # memorizedPthPath에서 오래된 모델 삭제 (최신 M 라운드만 유지)
+            all_memorized_files = [
+                os.path.join(memorized_pth_path, f) for f in os.listdir(memorized_pth_path) if f.endswith('.pth')
+            ]
 
-        # 파일별 라운드 번호 추출
-        files_with_round = []
-        for mem_file in all_memorized_files:
-            mem_file_name = os.path.basename(mem_file)
-            try:
-                parts = mem_file_name.split('_round')
-                round_num = int(parts[1].replace('.pth', ''))
-                files_with_round.append((mem_file, round_num))
-            except (IndexError, ValueError):
-                print(f"Invalid memorized file name format: {mem_file_name}")
-                continue
+            # 파일별 라운드 번호 추출
+            files_with_round = []
+            for mem_file in all_memorized_files:
+                mem_file_name = os.path.basename(mem_file)
+                try:
+                    parts = mem_file_name.split('_round')
+                    round_num = int(parts[1].replace('.pth', ''))
+                    files_with_round.append((mem_file, round_num))
+                except (IndexError, ValueError):
+                    print(f"Invalid memorized file name format: {mem_file_name}")
+                    continue
 
-        # 라운드 번호 기준으로 정렬 (오래된 순)
-        files_with_round.sort(key=lambda x: x[1])
+            # 라운드 번호 기준으로 정렬 (오래된 순)
+            files_with_round.sort(key=lambda x: x[1])
 
-        # 유지할 라운드 번호 범위
-        min_round_to_keep = self.currentRound.value - M + 1
+            # 유지할 라운드 번호 범위
+            min_round_to_keep = self.currentRound.value - M + 1
 
-        # 삭제할 파일 찾기
-        files_to_delete = [f for f, r in files_with_round if r < min_round_to_keep]
+            # 삭제할 파일 찾기
+            files_to_delete = [f for f, r in files_with_round if r < min_round_to_keep]
 
-        for filePath in files_to_delete:
-            os.remove(filePath)
-            print(f"Deleted old memorized model: {filePath}")
+            for filePath in files_to_delete:
+                os.remove(filePath)
+                print(f"Deleted old memorized model: {filePath}")
 
         # saving model
         rootModelPath = self.basicConfig['rootModelFilePath']
@@ -373,7 +380,8 @@ class Server(Process):
 
         # Delete all received pth files
         for file in pth_files:
-            os.remove(file)
+            if os.path.exists(file):
+                os.remove(file)
 
         if self.targetRound > self.currentRound.value:
             self.negotiate()
@@ -385,7 +393,7 @@ class Server(Process):
         dltAllFiles(self.basicConfig['clientsNegotiationFolderPath'])
 
         print("negotiating...")
-        self.pickyPickClients()  # self.pickClients()
+        self.pickeyPickClients()  # self.pickClients()
         self.roundStartTime = time.time_ns()  # log the round start time to track the round time
         self.currentRound.value += 1  # by up-counting the round value we're letting participants know about this round
 
@@ -415,74 +423,80 @@ class Server(Process):
                     json.dump(clientProfile, file, indent=4)
                     print(f"parameter sent to client {clientId}")
 
-    def pickyPickClients(self):
-        N = self.serverConfig['dont_pick_recent_rounds']
+        dltAllFiles(self.basicConfig['receivedProfilePath'])
 
-        # gather recent Nth round data & make it into 'set' of classes
-        recent_classes = set()
-        for class_list in self.recentPickedClasses[-N:]:
-            recent_classes.update(class_list)
+    def pickeyPickClients(self):
+        with self.recentPickedClasses_lock:
+            N = self.serverConfig['dont_pick_recent_rounds']
 
-        # filter clients who with no overlapped classes
-        eligible_clients = [
-            client for client in self.clientsList
-            if not set(self.totalDistributionSet.get(client, [])).intersection(recent_classes)
-        ]
+            # gather recent Nth round data & make it into 'set' of classes
+            recent_classes = set()
+            for class_list in self.recentPickedClasses:
+                recent_classes.update(class_list)
 
-        # check if there is enough clients
-        # random pick from eligible clients
-        if len(eligible_clients) >= self.updateClientsPerRound:
-            pickedClients = np.random.choice(eligible_clients, self.updateClientsPerRound, replace=False)
-        else:
-            # check if there isn't
-            # pick all the eligible clients & random pick the rest
-            pickedClients = list(eligible_clients)
-            remaining = self.updateClientsPerRound - len(eligible_clients)
+            print('recent_classes')
+            print(recent_classes)
 
-            if remaining > 0:
-                additional_clients = list(set(self.clientsList) - set(eligible_clients))
+            # filter clients who with no overlapped classes
+            eligible_clients = [
+                client for client in self.clientsList
+                if not set(self.totalDistributionSet.get(client, [])).intersection(recent_classes)
+            ]
 
-                if len(additional_clients) >= remaining:
-                    pickedClients += list(np.random.choice(additional_clients, remaining, replace=False))
-                else:
-                    # if still not enough
-                    # pick all clients available
-                    pickedClients += additional_clients
+            # check if there is enough clients
+            # random pick from eligible clients
+            if len(eligible_clients) >= self.updateClientsPerRound:
+                pickedClients = np.random.choice(eligible_clients, self.updateClientsPerRound, replace=False)
+            else:
+                # check if there isn't
+                # pick all the eligible clients & random pick the rest
+                pickedClients = list(eligible_clients)
+                remaining = self.updateClientsPerRound - len(eligible_clients)
 
-            pickedClients = np.array(pickedClients)
+                if remaining > 0:
+                    additional_clients = list(set(self.clientsList) - set(eligible_clients))
 
-        for session_id, (i) in enumerate(pickedClients):
-            self.sessionId[i] = session_id
-            self.status[i] = False
-            self.turnFlag[i] = 1  # mark the client which is picked
-            self.flipboard[i] = 0  # mark as file not sent
+                    if len(additional_clients) >= remaining:
+                        pickedClients += list(np.random.choice(additional_clients, remaining, replace=False))
+                    else:
+                        # if still not enough
+                        # pick all clients available
+                        pickedClients += additional_clients
 
-        for i in range(self.updateClientsPerRound):
-            self.pickedClientsList[i] = pickedClients[i]
+                pickedClients = np.array(pickedClients)
 
-        # pickedClients의 클래스 정보를 수집하여 recentPickedClasses를 업데이트합니다.
-        current_round_classes = []
+            for session_id, i in enumerate(pickedClients):
+                self.sessionId[i] = session_id
+                self.status[i] = False
+                self.turnFlag[i] = 1  # mark the client which is picked
+                self.flipboard[i] = 0  # mark as file not sent
 
-        for client in pickedClients:
-            client_classes = self.totalDistributionSet.get(client, [])
-            current_round_classes.extend(client_classes)
+            for i in range(self.updateClientsPerRound):
+                self.pickedClientsList[i] = pickedClients[i]
 
-        self.recentPickedClasses.append(current_round_classes)
+            # pickedClients의 클래스 정보를 수집하여 recentPickedClasses를 업데이트합니다.
+            current_round_classes = []
 
-        # recentPickedClasses가 N 라운드를 초과하지 않도록 유지합니다.
-        # keep N+1 data: 0 ~ 2th data is used when we look for the model when aggregating
-        if len(self.recentPickedClasses) > N+1:
-            self.recentPickedClasses.pop(0)
+            for client in pickedClients:
+                client_classes = self.totalDistributionSet.get(client, [])
+                current_round_classes.extend(client_classes)
 
-    def startFL(self):
-        print('informing to clients')
-        self.negotiate()
+            current_round_classes = list(set(current_round_classes))
+            self.recentPickedClasses.append(current_round_classes)
+
+            # recentPickedClasses가 N 라운드를 초과하지 않도록 유지합니다.
+            # keep N+1 data: 0 ~ 2th data is used when we look for the model when aggregating
+            if len(self.recentPickedClasses) > N+1:
+                self.recentPickedClasses.pop(0)
 
     def run(self):
         event_handler = PTHFileHandler(self)
         observer = Observer()
         observer.schedule(event_handler, self.pth_folder, recursive=False)
         observer.start()
+
+        print('informing to clients')
+        self.negotiate()
 
         try:
             while True:

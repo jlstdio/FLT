@@ -4,14 +4,14 @@ import torch.nn as nn
 
 
 class testNN_w_Softmax(nn.Module):
-    def __init__(self):
+    def __init__(self, outputClasses):
         super(testNN_w_Softmax, self).__init__()
         self.conv1 = nn.Conv2d(3, 32, kernel_size=3)
         self.pool = nn.MaxPool2d(kernel_size=2, stride=2)
         self.conv2 = nn.Conv2d(32, 64, kernel_size=3)
         self.conv3 = nn.Conv2d(64, 64, kernel_size=3)
         self.relu = nn.ReLU()
-        self.fc = nn.Linear(64 * 4 * 4, 10)  # 64는 채널 수, 4*4는 마지막 풀링 레이어의 출력 크기
+        self.fc = nn.Linear(64 * 4 * 4, outputClasses)  # 64는 채널 수, 4*4는 마지막 풀링 레이어의 출력 크기
         self.softmax = nn.Softmax(dim=1)  # use only with BCE
 
         self._initialize_weights()  # He 초기화 함수 호출

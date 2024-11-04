@@ -70,6 +70,7 @@ def runner(networkConfigPath, dataConfigPath):
     dltAllFiles(basicConfig['rootModelFilePath'])
     dltAllFiles(basicConfig['clientsMetadataFolderPath'])
     dltAllFiles(basicConfig['receivedProfilePath'])
+    dltAllFiles(basicConfig['memorizedPthPath'])
 
     print('Count of using GPUs:', torch.cuda.device_count())
     testName = basicConfig['testName']
@@ -80,6 +81,7 @@ def runner(networkConfigPath, dataConfigPath):
     clientDataset = zip(y_train[:clientTestDatasetSize], x_train[:clientTestDatasetSize])
     serverTestDataset = zip(y_test, x_test)
     classes = list(set(y_test))
+    numClasses = basicConfig['numClass']
 
     # clientsDict = iidSplit(clientDataset, classes, round(len(y_train)/numClients), numClients, basicConfig['seed'])
     # clientsDatasetDict = dirichlet_equal_split(clientDataset, classes, 1.0, numClients, basicConfig['seed'])
@@ -95,11 +97,11 @@ def runner(networkConfigPath, dataConfigPath):
     clientsPerCuda = basicConfig['clientsPerCuda']
     # modelToLoad = nn.DataParallel(testNN())
     if serverConfig['costFunc'] == 'CEloss':
-        modelToLoad = [testNN_wo_Softmax() for _ in range(numClients + 2)]
+        modelToLoad = [testNN_wo_Softmax(numClasses) for _ in range(numClients + 2)]
     elif serverConfig['costFunc'] == 'BCEloss':
-        modelToLoad = [testNN_w_Softmax() for _ in range(numClients + 2)]
+        modelToLoad = [testNN_w_Softmax(numClasses) for _ in range(numClients + 2)]
     elif serverConfig['costFunc'] == 'BCEWithLogitsLoss':
-        modelToLoad = [testNN_wo_Softmax() for _ in range(numClients + 2)]
+        modelToLoad = [testNN_wo_Softmax(numClasses) for _ in range(numClients + 2)]
 
     serverCudaId = updateClientsPerRound // clientsPerCuda
     flModel = fedAvg(modelToLoad[numClients + 1])
@@ -140,9 +142,6 @@ def runner(networkConfigPath, dataConfigPath):
 
     server.start()
 
-    # starts FL
-    server.startFL()
-
     server.join()
     network.join()
     wandbClientServer.terminate_client()
@@ -159,8 +158,23 @@ if __name__ == "__main__":
     networkConfigRoot = './config/networkConfig'
     dataConfigRoot = './config/datasetConfig'
 
-    networkConfig_PathList = [f'{networkConfigRoot}/config_m5 - test 1-1-.json']
-    dataConfig_PathList = [f'{dataConfigRoot}/dataConfig_pathological.json']
+    networkConfig_PathList = [f'{networkConfigRoot}/config_m5 - test 0-1.json',
+                              f'{networkConfigRoot}/config_m5 - test 0-2.json',
+                              f'{networkConfigRoot}/config_m5 - test 1-1.json',
+                              f'{networkConfigRoot}/config_m5 - test 1-2.json',
+                              f'{networkConfigRoot}/config_m5 - test 1-3.json',
+                              f'{networkConfigRoot}/config_m5 - test 1-4.json',
+                              f'{networkConfigRoot}/config_m5 - test 1-5.json',
+                              f'{networkConfigRoot}/config_m5 - test 1-6.json']
+
+    dataConfig_PathList = [f'{dataConfigRoot}/dataConfig_pathological.json',
+                           f'{dataConfigRoot}/dataConfig_pathological.json',
+                           f'{dataConfigRoot}/dataConfig_pathological.json',
+                           f'{dataConfigRoot}/dataConfig_pathological.json',
+                           f'{dataConfigRoot}/dataConfig_pathological.json',
+                           f'{dataConfigRoot}/dataConfig_pathological.json',
+                           f'{dataConfigRoot}/dataConfig_pathological.json',
+                           f'{dataConfigRoot}/dataConfig_pathological.json']
 
     for network_configPath, data_configPath in zip(networkConfig_PathList, dataConfig_PathList):
         print(f'running with {network_configPath} | {data_configPath}')

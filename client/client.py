@@ -258,7 +258,6 @@ class Client(Process):
                     targets = targets.long().to(self.device)  # CE
 
                 outputs = self.model(inputs)
-
                 npOutputs = torch.argmax(outputs, dim=1)
 
                 if self.config['costFunc'] == 'CEloss':

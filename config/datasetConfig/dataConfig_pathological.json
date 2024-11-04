@@ -2,7 +2,7 @@
   "clientsType": [
     {
       "numberOfClients": 100,
-      "classesPerClient": 3
+      "classesPerClient": 2
     }
   ]
 }
