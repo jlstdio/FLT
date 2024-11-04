@@ -1,10 +1,18 @@
+import json
+from collections import defaultdict
 import numpy as np
+import random
 
 
-def dirichletSplit(dataset, classes, alpha, numClients, seed=1234):
-    # torch.manual_seed(seed)
+def dirichletSplit(dataset, classes, numClients, configPath, seed=1234):
     np.random.seed(seed)
-    # random.seed(seed)
+    random.seed(seed)
+
+    with open(configPath, 'r') as file:
+        config = json.load(file)
+
+    config = config['clientsType'][0]
+    alpha = config['alpha']
 
     clientsDict = {i: [] for i in range(numClients)}
     class_data = {cls: [] for cls in classes}
@@ -41,10 +49,10 @@ def dirichletSplit(dataset, classes, alpha, numClients, seed=1234):
 
     return clientsDict
 
+
 def dirichlet_equal_split(dataset, classes, alpha, num_clients, seed):
-    # torch.manual_seed(seed)
     np.random.seed(seed)
-    # random.seed(seed)
+    random.seed(seed)
 
     # Unzipping the dataset
     ys, xs = zip(*dataset)
@@ -102,3 +110,52 @@ def dirichlet_equal_split(dataset, classes, alpha, num_clients, seed):
         dict_users[client] = paired_samples
 
     return dict_users
+
+
+def pathologicalSplit(dataset, classes, numClients, configPath='', seed=1234):
+    np.random.seed(seed)
+    random.seed(seed)
+
+    with open(configPath, 'r') as file:
+        config = json.load(file)
+
+    config = config['clientsType'][0]
+    classesPerClient = int(config['classesPerClient'])
+
+    # Initialize dictionary for clients
+    clientsDict = {i: [] for i in range(numClients)}
+
+    # Organize data by class
+    class_data = {cls: [] for cls in classes}
+    for cls, data in dataset:
+        class_data[cls].append(data)
+
+    # Shuffle classes to ensure random assignment
+    shuffled_classes = np.random.permutation(classes)
+    num_classes = len(shuffled_classes)
+
+    # Calculate classes per client
+    # Ensure that all classes are assigned
+    if classesPerClient * numClients < num_classes:
+        raise ValueError("classesPerClient * numClients must be >= number of classes")
+
+    # Assign classes to clients
+    client_classes = defaultdict(list)
+    for idx, cls in enumerate(shuffled_classes):
+        client_id = idx % numClients
+        client_classes[client_id].append(cls)
+
+    # Optionally, assign additional classes if classesPerClient > classes assigned
+    for client_id in range(numClients):
+        while len(client_classes[client_id]) < classesPerClient:
+            additional_class = np.random.choice(shuffled_classes)
+            if additional_class not in client_classes[client_id]:
+                client_classes[client_id].append(additional_class)
+
+    # Assign data to clients based on their assigned classes
+    for client_id, assigned_classes in client_classes.items():
+        for cls in assigned_classes:
+            client_data = class_data[cls]
+            clientsDict[client_id].extend([(cls, data) for data in client_data])
+
+    return clientsDict

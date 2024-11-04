@@ -35,39 +35,52 @@ def scoring(round_num, scorePath, fileName, all_targets, all_outputs, acc, loss)
     target_key = f'target_{round_num}'
     output_key = f'output_{round_num}'
     scoreFilePath = os.path.join(scorePath, fileName)
-
-    acc_key = 'acc'
-    loss_key = 'loss'
     prefFilePath = os.path.join(scorePath, f'pref_{fileName}')
 
     # 디렉토리 생성
     os.makedirs(scorePath, exist_ok=True)
 
     # 점수 파일 처리
-    score_df = pd.DataFrame({
+    if os.path.isfile(scoreFilePath):
+        # 파일이 있으면 읽어오기
+        score_df = pd.read_csv(scoreFilePath)
+    else:
+        # 파일이 없으면 빈 DataFrame 생성
+        score_df = pd.DataFrame()
+
+    # 새로운 데이터 생성
+    new_data = pd.DataFrame({
         target_key: all_targets,
         output_key: all_outputs
     })
 
-    if not os.path.isfile(scoreFilePath):
-        # 파일이 없으면 새로 생성하고 헤더 포함
-        score_df.to_csv(scoreFilePath, index=False)
-    else:
-        # 파일이 있으면 이어서 저장 (헤더 제외)
-        score_df.to_csv(scoreFilePath, mode='a', header=False, index=False)
+    # 기존 데이터프레임과 새로운 데이터프레임의 길이 조정
+    max_len = max(len(score_df), len(new_data))
+    score_df = score_df.reindex(range(max_len))
+    new_data = new_data.reindex(range(max_len))
+
+    # 데이터프레임 병합
+    score_df = pd.concat([score_df, new_data], axis=1)
+
+    # 저장
+    score_df.to_csv(scoreFilePath, index=False)
 
     # 성능(pref) 파일 처리
-    pref_df = pd.DataFrame({
-        acc_key: [acc],
-        loss_key: [loss]
-    })
-
-    if not os.path.isfile(prefFilePath):
-        # 파일이 없으면 새로 생성하고 헤더 포함
-        pref_df.to_csv(prefFilePath, index=False)
+    if os.path.isfile(prefFilePath):
+        pref_df = pd.read_csv(prefFilePath)
     else:
-        # 파일이 있으면 이어서 저장 (헤더 제외)
-        pref_df.to_csv(prefFilePath, mode='a', header=False, index=False)
+        pref_df = pd.DataFrame()
+
+    # 새로운 행 추가
+    new_pref_data = {
+        'round': round_num,
+        'acc': acc,
+        'loss': loss
+    }
+    pref_df = pref_df.append(new_pref_data, ignore_index=True)
+
+    # 저장
+    pref_df.to_csv(prefFilePath, index=False)
 
 # state_dict에서 'module.' 제거하는 함수
 def remove_module_prefix(state_dict):

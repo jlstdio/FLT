@@ -13,7 +13,8 @@ from dataPrepare.partiallyNonIid import custom_split_non_iid, difference_bias_by
 from dataset.cifar10.cifar10DataLoader import cifar10Dataloader
 from dataset.mnist.mnistDataLoader import mnistDataloader
 # from model.resnet50 import resNet50
-from model.testModel import testNN
+from model.testModel_wo_softmax import testNN_wo_Softmax
+from model.testModel_w_softmax import testNN_w_Softmax
 from network.FLNetwork import FLNetwork
 from server.fedOptimizer.fedAvg import fedAvg
 from server.server import Server
@@ -22,7 +23,7 @@ import torch
 import wandb
 from torch import nn
 from util.util import showDistribution, dltAllFiles
-from wandbClient import wandbClient
+from util.wandbClient import WandbClient
 
 # train_img_path = './dataset/mnist/train/train-images-idx3-ubyte'
 # train_label_path = './dataset/mnist/train/train-labels-idx1-ubyte'
@@ -33,16 +34,14 @@ data_dir = './dataset/cifar10'
 # mnist_dataloader = mnistDataloader(train_img_path, train_label_path, test_img_path, test_label_path)
 # (x_train, y_train), (x_test, y_test) = mnist_dataloader.load_data()  # 28 * 28 * 1 data
 
-cifar_dataloader = cifar10Dataloader(data_dir)
-(x_train, y_train), (x_test, y_test) = cifar_dataloader.load_data()  # 32 * 32 * 3 data
 
 # IMPLEMENTATION ###############################
+def runner(networkConfigPath, dataConfigPath):
 
-if __name__ == "__main__":
+    cifar_dataloader = cifar10Dataloader(data_dir)
+    (x_train, y_train), (x_test, y_test) = cifar_dataloader.load_data()  # 32 * 32 * 3 data
 
-    configPath = sys.argv[1]  # './config1.json' | './config1.json' | ...
-
-    with open(configPath, 'r') as file:
+    with open(networkConfigPath, 'r') as file:
         config = json.load(file)
 
     clientConfig = config['clients']
@@ -56,20 +55,17 @@ if __name__ == "__main__":
     startingCuda = basicConfig['startingCuda']
 
     seed = basicConfig['seed']
-    torch.manual_seed(seed)  # torch를 거치는 모든 난수들의 생성순서를 고정한다
-    torch.cuda.manual_seed(seed)  # cuda를 사용하는 메소드들의 난수시드는 따로 고정해줘야한다
-    torch.cuda.manual_seed_all(seed)  # if use multi-GPU
-    torch.backends.cudnn.deterministic = True  # 딥러닝에 특화된 CuDNN의 난수시드도 고정
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
-    np.random.seed(seed)  # numpy를 사용할 경우 고정
-    random.seed(seed)  # 파이썬 자체 모듈 random 모듈의 시드 고정
+    np.random.seed(seed)
+    random.seed(seed)
 
-    serverScoreFolderPath = basicConfig["serverScoreFolderRoot"] + "/" + basicConfig['testName'] + "-" + str(round(time.time()))
-    clientScoreFolderPath = basicConfig["clientScoreFolderRoot"] + "/" + basicConfig['testName'] + "-" + str(round(time.time()))
-    print('Scores are saved to...')
-    print(serverScoreFolderPath)
-    print(clientScoreFolderPath)
-
+    resultRootPath = basicConfig["resultRoot"] + "/" + basicConfig['testName'] + "-" + str(round(time.time()))
+    serverScoreFolderPath = resultRootPath + "/" + basicConfig["serverScoreFolderRoot"]
+    clientScoreFolderPath = resultRootPath + "/" + basicConfig["clientScoreFolderRoot"]
     os.makedirs(serverScoreFolderPath, exist_ok=True)
     os.makedirs(clientScoreFolderPath, exist_ok=True)
 
@@ -87,29 +83,36 @@ if __name__ == "__main__":
     clientTestDatasetSize = int(round(clientDataSetSize * testSetPerClient))
 
     clientDataset = zip(y_train[:clientTestDatasetSize], x_train[:clientTestDatasetSize])
-    serverTestDataset = zip(y_test[:5000], x_test[:5000])
-    classes = list(set(y_train))
+    serverTestDataset = zip(y_test, x_test)
+    classes = list(set(y_test))
 
     # clientsDict = iidSplit(clientDataset, classes, round(len(y_train)/numClients), numClients, basicConfig['seed'])
-    # clientsDict = dirichlet_equal_split(clientDataset, classes, 0.25, numClients, basicConfig['seed'])
+    # clientsDatasetDict = dirichlet_equal_split(clientDataset, classes, 1.0, numClients, basicConfig['seed'])
+    # clientsDatasetDict = dirichletSplit(clientDataset, classes, numClients, dataConfigPath, basicConfig['seed'])
     # clientsDictTrain = custom_split_non_iid(clientDataset, classes, numClients, 9, 9, 0.15, basicConfig['seed'])
     # clientsDictTrain = custom_split_non_iid(clientDataset, classes, numClients, 9, 9, 0.15, basicConfig['seed'])
-    clientsDatasetDict = difference_bias_by_type(clientDataset, classes, configPath="./config/datasetConfig/dataConfig1.json", seed=basicConfig['seed'])
-    # print(len(clientsDict[0]))
-    showDistribution(clientsDatasetDict, classes, f'clientsDataset {testName} - {int(round(time.time()))}')
+    clientsDatasetDict = difference_bias_by_type(clientDataset, classes, configPath=dataConfigPath, seed=basicConfig['seed'])
+    # clientsDatasetDict = pathologicalSplit(clientDataset, classes, numClients, configPath=dataConfigPath, seed=basicConfig['seed'])
+    distributionSavePath = f'{resultRootPath}/clientsDataset {testName} - {int(round(time.time()))}'
+    showDistribution(clientsDatasetDict, classes, distributionSavePath)
     # showDistribution(clientsDictTest, classes, 'clientsDictTest')
 
-    multiprocessing.set_start_method('spawn')
     clientsPerCuda = basicConfig['clientsPerCuda']
     # modelToLoad = nn.DataParallel(testNN())
-    modelToLoad = [testNN() for i in range (numClients + 2)]
+    if serverConfig['costFunc'] == 'CEloss':
+        modelToLoad = [testNN_wo_Softmax() for _ in range(numClients + 2)]
+    elif serverConfig['costFunc'] == 'BCEloss':
+        modelToLoad = [testNN_w_Softmax() for _ in range(numClients + 2)]
+    elif serverConfig['costFunc'] == 'BCEWithLogitsLoss':
+        modelToLoad = [testNN_wo_Softmax() for _ in range(numClients + 2)]
+
     serverCudaId = updateClientsPerRound // clientsPerCuda
     flModel = fedAvg(modelToLoad[numClients + 1])
     # modelToLoad = resNet50().getModel()
 
-    wandbClient = wandbClient(config=config)
-    wandbQueue = wandbClient.getQueue()
-    wandbClient.start()
+    wandbClientServer = WandbClient(config=config)
+    wandbClientServer.start()
+    wandbQueue = wandbClientServer.get_queue()
 
     network = FLNetwork(numClients=numClients,
                         basicConfig=basicConfig,
@@ -136,7 +139,7 @@ if __name__ == "__main__":
                     sessionId=sessionId,
                     startingCuda=startingCuda,
                     pickedClientsList=pickedClients,
-                    scorePath=serverScoreFolderPath,
+                    resultPath=resultRootPath,
                     wandbQueue=wandbQueue)
 
     server.start()
@@ -146,3 +149,31 @@ if __name__ == "__main__":
 
     server.join()
     network.join()
+    wandbClientServer.terminate_client()
+    wandbClientServer.join()
+    torch.cuda.empty_cache()
+
+    print('end of runner')
+
+
+if __name__ == "__main__":
+    multiprocessing.set_start_method('spawn')
+    networkConfigRoot = './config/networkConfig'
+    dataConfigRoot = './config/datasetConfig'
+
+    networkConfig_PathList = [f'{networkConfigRoot}/config_m3 - test 2-1.json',
+                              f'{networkConfigRoot}/config_m3 - test 2-3.json',
+                              f'{networkConfigRoot}/config_m3 - test 2-4.json',
+                              f'{networkConfigRoot}/config_m3 - test 2-5,json',
+                              f'{networkConfigRoot}/config_m3 - test 2-6.json']
+    dataConfig_PathList = [f'{dataConfigRoot}/dataConfig1.json',
+                           f'{dataConfigRoot}/dataConfig1.json'
+                           f'{dataConfigRoot}/dataConfig1.json'
+                           f'{dataConfigRoot}/dataConfig1.json'
+                           f'{dataConfigRoot}/dataConfig1.json']
+
+    for network_configPath, data_configPath in zip(networkConfig_PathList, dataConfig_PathList):
+        print(f'running with {network_configPath} | {data_configPath}')
+        runner(network_configPath, data_configPath)
+
+    print('end of program')

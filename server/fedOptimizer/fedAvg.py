@@ -3,7 +3,7 @@ import torch
 import copy
 from server.fedOptimizer.fedOptParent import fedOptParent
 
-
+'''
 def average_weights(weights: List[Dict[str, torch.Tensor]]) -> Dict[str, torch.Tensor]:
     weights_avg = copy.deepcopy(weights[0])
 
@@ -13,6 +13,19 @@ def average_weights(weights: List[Dict[str, torch.Tensor]]) -> Dict[str, torch.T
         weights_avg[key] = torch.div(weights_avg[key], len(weights))
 
     return weights_avg
+'''
+
+
+def average_weights(weights: List[Dict[str, torch.Tensor]]) -> Dict[str, torch.Tensor]:
+    if not weights:
+        raise ValueError("The weights list is empty.")
+
+    new_state_dict = {}
+    for key in weights[0].keys():
+        stacked = torch.stack([client[key] for client in weights], dim=0)
+        new_state_dict[key] = torch.mean(stacked, dim=0)
+
+    return new_state_dict
 
 
 class fedAvg(fedOptParent):
