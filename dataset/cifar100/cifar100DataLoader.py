@@ -6,7 +6,7 @@ import tarfile
 
 
 class cifar100Dataloader(object):
-    def __init__(self, data_dir, normalize=True):
+    def __init__(self, data_dir='', normalize=True):
         self.data_dir = data_dir
         self.batch_files = ['train']
         self.test_file = 'test'

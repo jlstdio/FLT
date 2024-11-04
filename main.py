@@ -11,6 +11,7 @@ from dataPrepare.iid import iidSplit
 from dataPrepare.noniid import *
 from dataPrepare.partiallyNonIid import custom_split_non_iid, difference_bias_by_type
 from dataset.cifar10.cifar10DataLoader import cifar10Dataloader
+from dataset.cifar100.cifar100DataLoader import cifar100Dataloader
 from dataset.mnist.mnistDataLoader import mnistDataloader
 # from model.resnet50 import resNet50
 from model.testModel_wo_softmax import testNN_wo_Softmax
@@ -25,21 +26,11 @@ from torch import nn
 from util.util import showDistribution, dltAllFiles
 from util.wandbClient import WandbClient
 
-# train_img_path = './dataset/mnist/train/train-images-idx3-ubyte'
-# train_label_path = './dataset/mnist/train/train-labels-idx1-ubyte'
-# test_img_path = './dataset/mnist/test/t10k-images-idx3-ubyte'
-# test_label_path = './dataset/mnist/test/t10k-labels-idx1-ubyte'
-data_dir = './dataset/cifar10'
 
-# mnist_dataloader = mnistDataloader(train_img_path, train_label_path, test_img_path, test_label_path)
-# (x_train, y_train), (x_test, y_test) = mnist_dataloader.load_data()  # 28 * 28 * 1 data
-
-
-# IMPLEMENTATION ###############################
 def runner(networkConfigPath, dataConfigPath):
 
-    cifar_dataloader = cifar10Dataloader(data_dir)
-    (x_train, y_train), (x_test, y_test) = cifar_dataloader.load_data()  # 32 * 32 * 3 data
+    cifar_dataloader = cifar100Dataloader()
+    (x_train, y_train), (x_test, y_test) = cifar_dataloader.load_data()
 
     with open(networkConfigPath, 'r') as file:
         config = json.load(file)
