@@ -1,0 +1,108 @@
+{
+  "basicInfo" : {
+    "projectName": "FLT",
+    "testName": "m3 - case 1-2",
+    "note": "CE, no clipping",
+    "dataset": "cifar-10",
+    "testSetPerClient": 0.5,
+    "validationSetPerClient": 0.0,
+    "numClient" : 12,
+    "clientsPerCuda": 5,
+    "updateClientsPerRound": 12,
+    "seed": 42,
+    "startingCuda": 1,
+    "participantsInfo": "0:0.3|1:0.3|2:0.3",
+    "errorFilePath": "./util/errorModel_1",
+    "aggregateFilePath": "./server/operationData/aggregatedPth_1",
+    "receivedPthPath": "./server/operationData/receivedPth_1",
+    "receivedDataPath": "./server/operationData/receivedData_1",
+    "receivedProfilePath": "./server/operationData/receivedProfile_1",
+    "rootModelFilePath": "./server/operationData/rootModel_1",
+    "clientsMetadataFolderPath": "./client/operationData/clientsMemory_1",
+    "clientsNegotiationFolderPath": "./client/operationData/clientsNegotiation_1",
+    "clientScoreFolderRoot": "./results",
+    "serverScoreFolderRoot": "./results",
+    "negotiate": true,
+    "spec_diverse": false,
+    "epoch_increase": false
+  },
+  "networkConfig" : {
+    "rate" : {
+      "PenaltyRate" : 0.7,
+      "RewardRate" : 0.4
+    },
+    "epoch" : {
+      "PenaltyValue" : -2,
+      "RewardValue" : 4
+    },
+    "batchSize" : {
+      "PenaltyValue" : -5,
+      "RewardValue" : 5
+    },
+    "dataSize" : {
+      "PenaltyValue" : -5,
+      "RewardValue" : 5
+    }
+  },
+  "clients": [
+    {
+      "type": "type0",
+      "temperature": 1.0,
+      "lr": 1e-2,
+      "lr_decay_step": 1,
+      "lr_decay": 1.0,
+      "momentum": 0.9,
+      "epoch": 20,
+      "batchSize": 15,
+      "delayMin": 0,
+      "delayMax": 0.03,
+      "trainDataSize" : 0.8,
+      "costFunc": "CEloss",
+      "optim" : "SGD",
+      "reg": "None",
+      "model": "testNN"
+    },
+    {
+      "type": "type1",
+      "temperature": 1.0,
+      "lr": 1e-2,
+      "lr_decay_step": 1,
+      "lr_decay": 1.0,
+      "momentum": 0.9,
+      "epoch": 20,
+      "batchSize": 15,
+      "delayMin": 0,
+      "delayMax": 0.03,
+      "trainDataSize" : 0.8,
+      "costFunc": "CEloss",
+      "optim" : "SGD",
+      "reg": "None",
+      "model": "testNN"
+    },
+    {
+      "type": "type2",
+      "temperature": 1.0,
+      "lr": 1e-2,
+      "lr_decay_step": 1,
+      "lr_decay": 1.0,
+      "momentum": 0.9,
+      "epoch": 20,
+      "batchSize": 15,
+      "delayMin": 0,
+      "delayMax": 0.03,
+      "trainDataSize" : 0.8,
+      "costFunc": "CEloss",
+      "optim" : "SGD",
+      "reg": "None",
+      "model": "testNN"
+    }
+  ],
+  "server": {
+    "flRound": 2,
+    "examinData_batchSize": 50,
+    "costFunc": "CEloss",
+    "optim" : "SGD",
+    "reg": "None",
+    "model": "testNN"
+  }
+}

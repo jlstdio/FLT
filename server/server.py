@@ -9,7 +9,6 @@ import numpy as np
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 import torch
-
 from server.examinModel import examinModel
 from util.util import dltAllFiles
 
@@ -81,7 +80,7 @@ def calculate_average(dataByType):
 
 class Server(Process):
     def __init__(self, rootModel, cudaId, flModel, examinDataset, serverConfig, basicConfig, currentRound, flipboard,
-                 turnFlag, sessionId, startingCuda, pickedClientsList, scorePath, wandbQueue):
+                 turnFlag, sessionId, startingCuda, pickedClientsList, resultPath, wandbQueue):
         super(Server, self).__init__()
         self.wandbQueue = wandbQueue
         self.serverConfig = serverConfig
@@ -108,7 +107,8 @@ class Server(Process):
         self.seed = basicConfig['seed']
         self.numOfTypes = len(str(basicConfig['participantsInfo']).split('|'))
         self.roundStartTime = 0
-        self.scorePath = scorePath
+        self.resultPath = resultPath
+        self.scorePath = resultPath + "/" + basicConfig["serverScoreFolderRoot"]
 
         torch.manual_seed(self.seed)  # torch를 거치는 모든 난수들의 생성순서를 고정한다
         torch.cuda.manual_seed(self.seed)  # cuda를 사용하는 메소드들의 난수시드는 따로 고정해줘야한다
@@ -119,16 +119,15 @@ class Server(Process):
         random.seed(self.seed)  # 파이썬 자체 모듈 random 모듈의 시드 고정
 
         # mkdir
-        receivedPath = str(self.basicConfig['receivedPthPath'])
-        receivedPath = receivedPath.split('/')
-        self.pth_folder = os.path.abspath(os.path.join(os.path.dirname(__file__), ".", receivedPath[-1]))
-        # print(self.pth_folder)
+        self.pth_folder = str(self.basicConfig['receivedPthPath'])
         os.makedirs(self.pth_folder, exist_ok=True)
 
         # root model init
         rootModelPath = self.basicConfig['rootModelFilePath']
         self.rootModel = copy.deepcopy(self.reservedRootModel)
-        torch.save(self.rootModel.state_dict(), f'{rootModelPath}/rootModel.pth')
+        testName = self.basicConfig['testName']
+        torch.save(self.rootModel.state_dict(), f'{rootModelPath}/rootModel-{testName}.pth')
+        torch.save(self.rootModel.state_dict(), f'{self.resultPath}/rootModel-{testName}.pth')
         del self.rootModel
 
         print("Server online")
@@ -145,7 +144,7 @@ class Server(Process):
         except ValueError:
             print(f"Invalid file name format: {file_name}")
 
-        if all(self.status):
+        if all(self.status) and self.currentRound.value != -1:
             print('waiting for last one to upload file completely')
             flag = True
             while flag:
@@ -199,12 +198,21 @@ class Server(Process):
         ## saving model
         rootModelPath = self.basicConfig['rootModelFilePath']
         aggregatedModelPath = self.basicConfig['aggregateFilePath']
+        testName = self.basicConfig['testName']
         torch.save(self.rootModel.state_dict(), f'{aggregatedModelPath}/root_round{self.currentRound.value}.pth')
-        torch.save(self.rootModel.state_dict(), f'{rootModelPath}/rootModel.pth')
+        torch.save(self.rootModel.state_dict(), f'{rootModelPath}/rootModel-{testName}.pth')
+        torch.save(self.rootModel.state_dict(), f'{self.resultPath}/rootModel-{testName}.pth')
 
-        examinManager = examinModel(self.internalIdWithClients, self.cudaId, self.examinDataset,
-                                    self.serverConfig['examinData_batchSize'], self.rootModel,
-                                    f'{rootModelPath}/rootModel.pth', self.seed, self.currentRound.value, self.scorePath, 'aggregate.csv')
+        examinManager = examinModel(self.internalIdWithClients,
+                                    self.cudaId,
+                                    self.examinDataset,
+                                    self.serverConfig,
+                                    self.rootModel,
+                                    f'{rootModelPath}/rootModel-{testName}.pth',
+                                    self.seed,
+                                    self.currentRound.value,
+                                    self.scorePath,
+                                    'aggregate.csv')
         examinManager.loadData()
         loss, acc = examinManager.examin()
 
@@ -243,21 +251,6 @@ class Server(Process):
 
         dltAllFiles(self.basicConfig['receivedDataPath'])
 
-        ## FL anomaly check
-        '''
-        if -20.0 > acc - self.lastAcc:
-            print(f'anomaly detected at {self.currentRound.value}')
-            torch.save(self.rootModel_1.state_dict(), f'./util/errorModel/rootModel_errored_at{self.currentRound.value}.pth')
-            self.currentRound = self.targetRound + 1
-            print('ejecting')
-        else:
-            dltAllFiles('./util/lastWorkingModel')
-            torch.save(self.rootModel_1.state_dict(),f'./util/lastWorkingModel/rootModel_at_{self.currentRound.value}.pth')
-
-        dltAllFiles('./util/lastWorkingModel')
-        torch.save(self.rootModel_1.state_dict(), f'./util/lastWorkingModel/rootModel_at_{self.currentRound.value}.pth')
-        '''
-
         self.lastAcc = acc
 
         # Reset status and increment round
@@ -271,12 +264,10 @@ class Server(Process):
             os.remove(file)
 
         if self.targetRound > self.currentRound.value:
-            self.negotiate()  # self.pickClients()
+            self.negotiate()
             print(f'round is now {self.currentRound.value}')
         elif self.targetRound == self.currentRound.value:
-            print(f'server round is over {self.currentRound.value}/{self.targetRound}')
-            print(f'ending sequence')
-            self.currentRound.value += 1
+            self.currentRound.value = -1
 
     def negotiate(self):
         dltAllFiles(self.basicConfig['clientsNegotiationFolderPath'])
@@ -286,166 +277,31 @@ class Server(Process):
         self.roundStartTime = time.time_ns()  # log the round start time to track the round time
         self.currentRound.value += 1  # by up-counting the round value we're letting participants know about this round
 
-        # m2 cases
-        '''
-        if self.basicConfig['enable_flid']:
-            # negotiate with clients
+        waitForFiles = True
+        waitLimit = 300
+        waitCount = 0
+        while waitForFiles is True or waitCount > waitLimit:
+            profileCount = len(os.listdir(self.basicConfig['receivedProfilePath']))
+            if profileCount == int(self.basicConfig['updateClientsPerRound']):
+                print("all profile received... negotiating")
+                waitForFiles = False
+            time.sleep(1.0)
+            waitCount += 1
 
-            ## first, wait for clients to send all the profile of their own
-            waitForFiles = True
-            waitLimit = 300
-            waitCount = 0
-            while waitForFiles is True or waitCount > waitLimit:
-                profileCount = len(os.listdir(self.basicConfig['receivedProfilePath']))
-                if profileCount == int(self.basicConfig['updateClientsPerRound']):
-                    print("all profile received... negotiating")
-                    waitForFiles = False
-                time.sleep(1.0)
-                waitCount += 1
+        ## modify for negotiation
+        for path in os.listdir(self.basicConfig['receivedProfilePath']):
+            clientId = int((str(path).split('/')[-1]).split('_')[1])
 
-            for path in os.listdir(self.basicConfig['receivedProfilePath']):
-                clientId = int((str(path).split('/')[-1]).split('_')[1]) # f'/client_{self.client_internalId}_profile.json'
+            with open(self.basicConfig['receivedProfilePath'] + "/" + path, 'r') as file:
+                clientProfile = json.load(file)
 
-                with open(self.basicConfig['receivedProfilePath'] + "/" + path, 'r') as file:
-                    clientProfile = json.load(file)
+                if self.currentRound.value > 1:
+                    clientProfile['clientMetadata']['lr'] *= 1.0
 
-                    epochBefore = clientProfile['clientMetadata']['epoch']
-
-                    if clientId <= 8:
-                        clientProfile['clientMetadata']['epoch'] = 20
-                    elif clientId == 9:
-                        times = (self.currentRound.value - 1) // 20
-                        adjustedEpoch = 5 * (times + 1)
-                        clientProfile['clientMetadata']['epoch'] = adjustedEpoch
-
-                    epochNow = clientProfile['clientMetadata']['epoch']
-                    print(f'client {clientId} : epoch was {epochBefore} -> now {epochNow}')
-
-                    negotiatePath = self.basicConfig['clientsNegotiationFolderPath'] + f'/{clientId}_negotiation.json'
-                    with open(negotiatePath, 'w') as file:
-                        json.dump(clientProfile, file, indent=4)
-                        print(f"parameter sent to client {clientId}")
-            '''
-
-        # m3 cases
-        if self.basicConfig['enable_flid']:
-            # negotiate with clients
-
-            ## first, wait for clients to send all the profile of their own
-            waitForFiles = True
-            waitLimit = 300
-            waitCount = 0
-            while waitForFiles is True or waitCount > waitLimit:
-                profileCount = len(os.listdir(self.basicConfig['receivedProfilePath']))
-                if profileCount == int(self.basicConfig['updateClientsPerRound']):
-                    print("all profile received... negotiating")
-                    waitForFiles = False
-                time.sleep(1.0)
-                waitCount += 1
-
-            ## gather files & calculate
-            client_profile = {}
-            client_DataWiseScore = {} # clients data wise score
-            client_TimeWiseScore = {}  # clients time wise score
-            client_combinedScore = {}  # clients combined score
-
-            for path in os.listdir(self.basicConfig['receivedProfilePath']):
-                clientId = int((str(path).split('/')[-1]).split('_')[1]) # f'/client_{self.client_internalId}_profile.json'
-
-                with open(self.basicConfig['receivedProfilePath'] + "/" + path, 'r') as file:
-                    clientProfile = json.load(file)
-
-                    client_profile[clientId] = clientProfile
-                    metadata = clientProfile['clientMetadata']
-                    perf = clientProfile['performance']
-
-                    """ calculate TWS """
-                    estimated_train_time = (float(perf['lastTrainTime']) + float(perf['avgTrainTime'])) / 2
-                    client_TimeWiseScore[clientId] = estimated_train_time
-
-                    """ if this is the first time running """
-                    if client_TimeWiseScore[clientId] == 0:
-                        client_TimeWiseScore[clientId] = 1
-
-                    """ calculate DWS """
-                    # client_DataWiseScore[clientId] = metadata['dataSize'] * metadata['batchSize'] * metadata['epoch']
-
-                    """ calculate combined score """
-                    # client_combinedScore[clientId] = client_DataWiseScore[clientId] / client_TimeWiseScore[clientId]
-
-            """ get poorest performance client - combined score ver """
-            # poorest_client_id = min(client_combinedScore, key=client_combinedScore.get)
-            # poorest_client_score = client_combinedScore[poorest_client_id]
-
-            """ get poorest performance(longest time taken) client - TWS score ver """
-            # poorest_client_id = min(client_TimeWiseScore, key=client_TimeWiseScore.get)
-            # poorest_client_score = client_TimeWiseScore[poorest_client_id]
-
-            """ get median performance(avg time taken) client - based on TWS """
-            # avg_client_id = min(client_TimeWiseScore, key=client_TimeWiseScore.get)
-            avg_score = sum(client_TimeWiseScore.values()) / len(client_TimeWiseScore)
-
-            # update & send parameters
-            for id, profile in client_profile.items():
-                """ combined score ver """
-                # if client_combinedScore[id] != 0.0:
-                #     updateConstant = client_combinedScore[id] / poorest_client_score
-                # else:
-                #     updateConstant = 1.0
-
-                """ TWS ver """
-                # if client_TimeWiseScore[id] != 0.0:
-                #     updateConstant = client_TimeWiseScore[id] / poorest_client_score
-                # else:
-                #     updateConstant = 1.0
-
-                """ TWS ver using avg score"""
-                if client_TimeWiseScore[id] != 0.0:
-                    updateConstant = client_TimeWiseScore[id] / avg_score
-                else:
-                    updateConstant = 1.0
-
-                dSizeBefore = profile['clientMetadata']['dataSize']
-                epochBefore = profile['clientMetadata']['epoch']
-
-                sqrtC = math.sqrt(updateConstant)
-                profile['clientMetadata']['dataSize'] *= sqrtC
-                profile['clientMetadata']['dataSize'] = round(profile['clientMetadata']['dataSize'], 2)
-                profile['clientMetadata']['epoch'] *= sqrtC
-                profile['clientMetadata']['epoch'] = round(profile['clientMetadata']['epoch'])
-
-                allowed_max_dataSize = 0.95
-                allowed_min_dataSize = 0.05
-
-                if profile['clientMetadata']['dataSize'] > allowed_max_dataSize:
-                    print(f'client {id} is at the maximum data size')
-                    profile['clientMetadata']['dataSize'] = allowed_max_dataSize
-                elif profile['clientMetadata']['dataSize'] < allowed_min_dataSize:
-                    print(f'client {id} is at the minimum data size')
-                    profile['clientMetadata']['dataSize'] = allowed_min_dataSize
-
-                dSizeNow = profile['clientMetadata']['dataSize']
-                print(f'client {id} : dataSize was {dSizeBefore} -> now {dSizeNow}')
-
-                allowed_max_epoch = 100
-                allowed_min_epoch = 10
-
-                if profile['clientMetadata']['epoch'] > allowed_max_epoch:
-                    print(f'client {id} is at the maximum epoch')
-                    profile['clientMetadata']['epoch'] = allowed_max_epoch
-                elif profile['clientMetadata']['epoch'] < allowed_min_epoch:
-                    print(f'client {id} is at the minimum epoch')
-                    profile['clientMetadata']['epoch'] = allowed_min_epoch
-
-                epochNow = profile['clientMetadata']['epoch']
-                print(f'client {id} : epoch was {epochBefore} -> now {epochNow}')
-
-                negotiatePath = self.basicConfig['clientsNegotiationFolderPath'] + f'/{id}_negotiation.json'
+                negotiatePath = self.basicConfig['clientsNegotiationFolderPath'] + f'/{clientId}_negotiation.json'
                 with open(negotiatePath, 'w') as file:
-                    json.dump(profile, file, indent=4)
-                    print(f"parameter sent to client {id}")
-
-        dltAllFiles(self.basicConfig['receivedProfilePath'])
+                    json.dump(clientProfile, file, indent=4)
+                    print(f"parameter sent to client {clientId}")
 
     def pickClients(self):
         pickedClients = np.random.choice(self.clientsList, self.updateClientsPerRound, replace=False)
@@ -463,7 +319,7 @@ class Server(Process):
 
     def startFL(self):
         print('informing to clients')
-        self.negotiate()  # self.pickClients()
+        self.negotiate()
 
     def run(self):
         event_handler = PTHFileHandler(self)
@@ -473,9 +329,9 @@ class Server(Process):
 
         try:
             while True:
-                if self.targetRound < self.currentRound.value:
-                    print(f'server round is over {self.currentRound.value}/{self.targetRound}')
-                    self.currentRound.value = -1
+                if self.currentRound.value == -1:
+                    observer.stop()
+                    print(f'server round is over')
                     print(f'server will terminate after 10 sec')
                     time.sleep(10)
                     break
@@ -483,4 +339,3 @@ class Server(Process):
         except KeyboardInterrupt:
             observer.stop()
         observer.join()
-        print('server is terminating')

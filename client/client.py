@@ -5,6 +5,7 @@ import time
 from multiprocessing import Process
 from random import shuffle
 import pandas as pd
+from matplotlib import pyplot as plt
 from torch import optim, nn
 from torch.cuda import set_per_process_memory_fraction, is_available
 from torch.utils.data import DataLoader, TensorDataset
@@ -13,6 +14,7 @@ import torch.nn.functional as F
 import numpy as np
 import os
 from torch.optim.lr_scheduler import CosineAnnealingLR
+from util.param_visualization import param_visualization
 from util.util import scoring
 
 
@@ -23,12 +25,12 @@ class Client(Process):
         super().__init__()
 
         torch.manual_seed(seed)
-        torch.cuda.manual_seed(seed)  # cuda를 사용하는 메소드들의 난수시드는 따로 고정해줘야한다
-        torch.cuda.manual_seed_all(seed)  # if use multi-GPU
-        torch.backends.cudnn.deterministic = True  # 딥러닝에 특화된 CuDNN의 난수시드도 고정
+        torch.cuda.manual_seed(seed)
+        torch.cuda.manual_seed_all(seed)
+        torch.backends.cudnn.deterministic = True
         torch.backends.cudnn.benchmark = False
-        np.random.seed(seed)  # numpy를 사용할 경우 고정
-        random.seed(seed)  # 파이썬 자체 모듈 random 모듈의 시드 고정
+        np.random.seed(seed)
+        random.seed(seed)
 
         self.startingCuda = startingCuda
         self.device = None
@@ -66,10 +68,12 @@ class Client(Process):
         if torch.cuda.device_count() > 1:
             self.model = nn.DataParallel(self.model)
         '''
-
-        # self.criterion = nn.BCELoss()
-        # self.criterion = nn.BCEWithLogitsLoss()
-        self.criterion = nn.CrossEntropyLoss()
+        if self.config['costFunc'] == 'CEloss':
+            self.criterion = nn.CrossEntropyLoss()
+        elif self.config['costFunc'] == 'BCEloss':
+            self.criterion = nn.BCELoss()
+        elif self.config['costFunc'] == 'BCEWithLogitsLoss':
+            self.criterion = nn.BCEWithLogitsLoss()
         '''
         if is_available():
             set_per_process_memory_fraction(self.config['memFrac'], self.device.index)
@@ -79,11 +83,6 @@ class Client(Process):
         print(f"Client {client_internalId} online")
 
     def loadData(self):
-        '''
-        dataset => {Data amount}
-        dataset[N] => (label : {1}, data : {32,32,3})
-        '''
-
         train_ratio = round(self.clientProfile['clientMetadata']['dataSize'], 2)
         train_size = int(train_ratio * len(self.dataset))
 
@@ -95,36 +94,42 @@ class Client(Process):
 
         train_x = np.array(train_x)
         train_y = np.array(train_y)
-        train_y = np.eye(10)[train_y]
 
         valid_x = np.array(valid_x)
         valid_y = np.array(valid_y)
-        valid_y = np.eye(10)[valid_y]
 
-        # print(f'train y : {np.argmax(train_y, axis=1)} | valid y : {np.argmax(valid_y, axis=1)}')
-        # print(f'client {self.client_internalId} : {torch.tensor(train_x, dtype=torch.float32).shape}')
+        if self.config['costFunc'] == 'CEloss':
+            pass
+        elif self.config['costFunc'] == 'BCEloss':
+            train_y = np.eye(10)[train_y]  # BCE
+            valid_y = np.eye(10)[valid_y]  # BCE
+        elif self.config['costFunc'] == 'BCEWithLogitsLoss':
+            pass
 
         X_train = torch.tensor(train_x, dtype=torch.float32).permute(0, 3, 1, 2)
-        y_train = torch.tensor(train_y, dtype=torch.float32)  # float32
-
         X_val = torch.tensor(valid_x, dtype=torch.float32).permute(0, 3, 1, 2)
-        y_val = torch.tensor(valid_y, dtype=torch.float32)  # float32
 
-        X_train = F.normalize(X_train, dim=0)
-        X_val = F.normalize(X_val, dim=0)
+        if self.config['costFunc'] == 'CEloss':
+            y_train = torch.tensor(train_y, dtype=torch.long)  # CE
+            y_val = torch.tensor(valid_y, dtype=torch.long)  # CE
+        elif self.config['costFunc'] == 'BCEloss':
+            y_train = torch.tensor(train_y, dtype=torch.float32)  # BCE
+            y_val = torch.tensor(valid_y, dtype=torch.float32)  # BCE
+        elif self.config['costFunc'] == 'BCEWithLogitsLoss':
+            y_train = torch.tensor(train_y, dtype=torch.long)  # CE
+            y_val = torch.tensor(valid_y, dtype=torch.long)  # CE
 
         train_dataset = TensorDataset(X_train, y_train)
         val_dataset = TensorDataset(X_val, y_val)
 
-        self.train_loader = DataLoader(train_dataset, batch_size=self.clientProfile['clientMetadata']['batchSize'],
-                                       shuffle=True)
-        self.val_loader = DataLoader(val_dataset, batch_size=self.clientProfile['clientMetadata']['batchSize'],
-                                     shuffle=True)
+        self.train_loader = DataLoader(train_dataset, batch_size=self.clientProfile['clientMetadata']['batchSize'], shuffle=True)
+        self.val_loader = DataLoader(val_dataset, batch_size=self.clientProfile['clientMetadata']['batchSize'], shuffle=True)
 
     def train(self, epochs=10):
         lr_origin = self.clientProfile['clientMetadata']['lr']
         T = self.clientProfile['clientMetadata']['T']
-        lr = round(lr_origin / T, 6)
+        lr = lr_origin / T
+        # lr = round(lr_origin / T, 6)
 
         key_lr_origin = f"client/metadata/learningRate-origin/client{self.client_internalId} origin lr"
         key_lr_adjusted = f"client/metadata/learningRate-adjusted/client{self.client_internalId} adjusted lr"
@@ -145,21 +150,53 @@ class Client(Process):
         all_targets = []
         all_outputs = []
 
+        # ====== Parameter heatmap ======
+        '''
+        # 시각화를 저장할 디렉토리 생성
+        visualization_dir = f"parameter_visualizations/{self.client_internalId}/round_{self.round}"
+        os.makedirs(visualization_dir, exist_ok=True)
+
+        initial_params = {}
+        final_params = {}
+
+        # 학습 시작 전 파라미터 저장
+        for name, param in self.model.named_parameters():
+            initial_params[name] = param.clone().detach().cpu().numpy()
+
+        # 학습 후 파라미터 저장 및 크기 출력 (옵션)
+        parameter_sizes_after_path = os.path.join(visualization_dir, "parameter_sizes.txt")
+        with open(parameter_sizes_after_path, "w") as f:
+            for name, param in self.model.named_parameters():
+                final_params[name] = param.clone().detach().cpu().numpy()
+                param_info = f"파라미터 이름: {name}, 크기: {tuple(param.size())}\n"
+                # print(param_info.strip())
+                f.write(param_info)
+        '''
+
         self.model.train()
         for epoch in range(epochs):
             running_loss = 0.0
             for inputs, targets in self.train_loader:
                 inputs = inputs.to(self.device)
-                # targets = targets.to(self.device)
-                targets = targets.long().to(self.device)
+                if self.config['costFunc'] == 'CEloss':
+                    targets = targets.long().to(self.device)  # CE
+                elif self.config['costFunc'] == 'BCEloss':
+                    targets = targets.to(self.device)  # BCE
+                elif self.config['costFunc'] == 'BCEWithLogitsLoss':
+                    targets = targets.long().to(self.device)  # CE
                 outputs = self.model(inputs) / T
-                outputs_p = torch.softmax(outputs, dim=1)
-                # outputs = torch.argmax(outputs, dim=1)
 
                 loss = self.criterion(outputs, targets)
                 self.optimizer.zero_grad()
                 loss.backward()
-                torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=3)
+
+                if self.config['costFunc'] == 'CEloss':
+                    pass
+                elif self.config['costFunc'] == 'BCEloss':
+                    torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=self.config['normClip'])  # with BCE
+                elif self.config['costFunc'] == 'BCEWithLogitsLoss':
+                    pass
+
                 self.optimizer.step()
                 running_loss += loss.item()
 
@@ -171,7 +208,7 @@ class Client(Process):
                     time.sleep(randTime)
 
                 all_targets.extend(targets.detach().cpu().numpy())
-                all_outputs.extend(outputs_p.detach().cpu().numpy())
+                all_outputs.extend(outputs.detach().cpu().numpy())
 
             avg_loss = running_loss / len(self.train_loader)
             key_loss = f"client/performance/train/loss/client{self.client_internalId} training loss"
@@ -181,29 +218,22 @@ class Client(Process):
             # self.wandbQueue.put(logList)
 
             # self.wandbClient.sendLog(key=f"client{self.client_internalId} training loss", data=avg_loss)
-            # print(f"Client {self.client_internalId} Epoch [{epoch + 1}/{epochs}], Loss: {avg_loss:.4f}")
+            # print(f"Client {self.client_internalId} Epoch [{epoch + 1}/{epochs}][, Loss: {avg_loss:.4f}")
+
+        '''
+        # ====== Parameter heatmap ======
+        for name, param in self.model.named_parameters():
+            final_params[name] = param.clone().detach().cpu().numpy()
+        # ====== ====== ====== ====== ====== ======
+
+        param_visualization(visualization_dir, initial_params, final_params)
+        '''
 
         # scale by 1 / T before sending it to server -> to adjust norm difference with different clients
-        with torch.no_grad():
-            for param in self.model.parameters():
-                param.mul_(1.0 / T)
-        print(f'client{self.client_internalId} model weights scaled by 1/T={1.0 / T}')
-
-        # learning rate scheduling ----------------------- #
-        # scheduler = CosineAnnealingLR(self.optimizer, T_max=100, eta_min=1e-6)
-        # scheduled_lr = self.optimizer.param_groups[0]['lr']
-
-        # lr_origin = self.clientProfile['clientMetadata']['lr']
-        # T = self.clientProfile['clientMetadata']['T']
-
-        # if self.serverRound.value % self.config['lr_decay_step'] == 0 and self.serverRound.value != 0:
-        #     lr *= self.config['lr_decay']
-
-        # self.clientProfile['clientMetadata']['lr'] = round(lr, 6)
-        # ------------------------------------------------ #
-
-        # round_num = self.clientProfile["etc"]["pickedCount"]
-        # scoring(round_num, self.scorePath, f"/train.csv", all_targets, all_outputs)
+        if T != 1:
+            with torch.no_grad():
+                for param in self.model.parameters():
+                    param.mul_(1.0 / T)
 
         return logList
 
@@ -219,15 +249,32 @@ class Client(Process):
             total_loss = 0
             for inputs, targets in self.val_loader:
                 inputs = inputs.to(self.device)
-                targets = targets.long().to(self.device)
-                outputs = self.model(inputs)
-                outputs_p = torch.softmax(outputs, dim=1)
 
-                npOutputs = torch.argmax(outputs_p, dim=1)
-                npTargets = torch.argmax(targets, dim=1)
+                if self.config['costFunc'] == 'CEloss':
+                    targets = targets.long().to(self.device)  # CE
+                elif self.config['costFunc'] == 'BCEloss':
+                    targets = targets.to(self.device)  # BCE
+                elif self.config['costFunc'] == 'BCEWithLogitsLoss':
+                    targets = targets.long().to(self.device)  # CE
+
+                outputs = self.model(inputs)
+
+                npOutputs = torch.argmax(outputs, dim=1)
+
+                if self.config['costFunc'] == 'CEloss':
+                    npTargets = targets  # CE
+                elif self.config['costFunc'] == 'BCEloss':
+                    npTargets = torch.argmax(targets, dim=1)  # BCE
+                elif self.config['costFunc'] == 'BCEWithLogitsLoss':
+                    npTargets = targets  # CE
+
+                loss = self.criterion(outputs, targets)
+                total_loss += loss.item()
+
                 npOutputs = np.array(npOutputs.cpu())
                 npTargets = np.array(npTargets.cpu())
 
+                # 정확도 계산을 위한 루프 유지
                 for i in range(len(npOutputs)):
                     singleOutput = npOutputs[i]
                     singleTarget = npTargets[i]
@@ -235,11 +282,8 @@ class Client(Process):
                     if singleOutput == singleTarget:
                         acc += 1
 
-                loss = self.criterion(outputs, targets)
-                total_loss += loss.item()
-
                 all_targets.extend(targets.detach().cpu().numpy())
-                all_outputs.extend(outputs_p.detach().cpu().numpy())
+                all_outputs.extend(outputs.detach().cpu().numpy())
 
             avg_loss = total_loss / len(self.val_loader)
             acc /= count
@@ -257,7 +301,7 @@ class Client(Process):
         """ RUN 함수 """
 
         """ [OPEN] - INITIATING, GATHERING METADATA """
-        print(f"Client {self.client_internalId} with PID {os.getpid()} started.")
+        # print(f"Client {self.client_internalId} with PID {os.getpid()} started.")
         default_metadata = {
             "clientMetadata": {},
             "performance": {},
@@ -279,7 +323,7 @@ class Client(Process):
             default_metadata["clientMetadata"]["lr"] = self.config['lr']
             default_metadata["clientMetadata"]["epoch"] = self.config['epoch']
             default_metadata["clientMetadata"]["batchSize"] = self.config['batchSize']
-            default_metadata["clientMetadata"]["dataSize"] = self.config['trainDataSize']  # default 0.9
+            default_metadata["clientMetadata"]["dataSize"] = self.config['trainDataSize']
 
             default_metadata["performance"]["lastTrainTime"] = 0.0
             default_metadata["performance"]["avgTrainTime"] = 0.0
@@ -290,13 +334,10 @@ class Client(Process):
                 json.dump(default_metadata, file, indent=4)
 
             self.clientProfile = default_metadata  # load default parameter
-
-        pickedCount = self.clientProfile["etc"]["pickedCount"]
-        print(f'{self.client_internalId} pickedCount : {pickedCount}')
         """ [CLOSE] INITIATING, GATHERING METADATA """
 
         """ [OPEN] HYPERPARAMETER NEGOTIATING """
-        if self.basicConfig['enable_flid']:
+        if self.basicConfig['negotiate']:
 
             # first, send profile to Server
             with open(self.profileDataPath, 'w') as file:
@@ -335,7 +376,8 @@ class Client(Process):
         self.device = torch.device(f"cuda:{cudaId}" if is_available() else "cpu")
         self.loadData()
         rootModelPath = self.basicConfig['rootModelFilePath']
-        rootModelPath = f'{rootModelPath}/rootModel.pth'
+        testName = self.basicConfig['testName']
+        rootModelPath = f'{rootModelPath}/rootModel-{testName}.pth'
         model_state_dict = torch.load(rootModelPath, map_location=self.device)
         self.model.load_state_dict(model_state_dict)
         self.model = self.model.to(self.device)
@@ -361,44 +403,6 @@ class Client(Process):
         file_count = len(file_list) + 1
         self.finishRate = file_count / self.basicConfig['updateClientsPerRound']
         """ ---- [CLOSE] INITIAL TRAINING """
-
-        """ ---- [OPEN] OPTIONAL : ADDITIONAL TRAINING """
-        ## FLID - epoch control
-        ''' CODES UNDER HERE '''
-        '''
-        if self.basicConfig['enable_flid']:
-            ## additional train rule
-            # TODO : move this function to clientUtil.py
-            if self.finishRate < self.networkConfig['rate']['RewardRate']:
-                # assume that this device has better resource environment
-                print(f'Client {self.client_internalId} is faster than others, performing additional train {self.finishRate}')
-                self.clientProfile['clientMetadata']['epoch'] += self.networkConfig['epoch']['RewardValue']
-
-                logList = self.train(epochs=self.networkConfig['epoch']['RewardValue'])
-
-            elif self.finishRate > self.networkConfig['rate']['PenaltyRate']:
-                # assume that this device is in limited resource environment
-                self.clientProfile['clientMetadata']['epoch'] += self.networkConfig['epoch']['PenaltyValue']
-                print(f'Client {self.client_internalId} is worse than others, not performing additional train {self.finishRate}')
-
-            else:
-                print(f'Client {self.client_internalId} has intermediate performance not performing additional train {self.finishRate}')
-
-            ## meta data upper & lower bound setting
-            if self.clientProfile['clientMetadata']['epoch'] < 5:
-                self.clientProfile['clientMetadata']['epoch'] = 5
-
-            elif self.clientProfile['clientMetadata']['epoch'] > 35:
-                self.clientProfile['clientMetadata']['epoch'] = 35
-        '''
-        ''' CODES ABOVE HERE '''
-
-        ## FLID - batch size & data size control
-        ''' CODES UNDER HERE '''
-        ## NO CODES HERE YET
-        ''' CODES ABOVE HERE '''
-
-        """ ---- [CLOSE] OPTIONAL : ADDITIONAL TRAINING """
         """ [CLOSE] TRAIN """
 
         # Logging finished train time
