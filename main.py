@@ -104,7 +104,7 @@ def runner(networkConfigPath, dataConfigPath):
         modelToLoad = [testNN_wo_Softmax(numClasses) for _ in range(numClients + 2)]
 
     serverCudaId = updateClientsPerRound // clientsPerCuda
-    flModel = fedAvg(modelToLoad[numClients + 1])
+    flModel = fedAvg(modelToLoad[numClients + 1], serverCudaId)
     # modelToLoad = resNet50().getModel()
 
     wandbClientServer = WandbClient(config=config)
@@ -151,30 +151,15 @@ def runner(networkConfigPath, dataConfigPath):
     print('end of runner')
 
 
-
 if __name__ == "__main__":
     multiprocessing.set_start_method('spawn')
 
     networkConfigRoot = './config/networkConfig'
     dataConfigRoot = './config/datasetConfig'
 
-    networkConfig_PathList = [f'{networkConfigRoot}/config_m5 - test 0-1.json',
-                              f'{networkConfigRoot}/config_m5 - test 0-2.json',
-                              f'{networkConfigRoot}/config_m5 - test 1-1.json',
-                              f'{networkConfigRoot}/config_m5 - test 1-2.json',
-                              f'{networkConfigRoot}/config_m5 - test 1-3.json',
-                              f'{networkConfigRoot}/config_m5 - test 1-4.json',
-                              f'{networkConfigRoot}/config_m5 - test 1-5.json',
-                              f'{networkConfigRoot}/config_m5 - test 1-6.json']
+    networkConfig_PathList = [f'{networkConfigRoot}/config_m6 - test 0-0.json']
 
-    dataConfig_PathList = [f'{dataConfigRoot}/dataConfig_pathological.json',
-                           f'{dataConfigRoot}/dataConfig_pathological.json',
-                           f'{dataConfigRoot}/dataConfig_pathological.json',
-                           f'{dataConfigRoot}/dataConfig_pathological.json',
-                           f'{dataConfigRoot}/dataConfig_pathological.json',
-                           f'{dataConfigRoot}/dataConfig_pathological.json',
-                           f'{dataConfigRoot}/dataConfig_pathological.json',
-                           f'{dataConfigRoot}/dataConfig_pathological.json']
+    dataConfig_PathList = [f'{dataConfigRoot}/dataConfig_pathological.json']
 
     for network_configPath, data_configPath in zip(networkConfig_PathList, dataConfig_PathList):
         print(f'running with {network_configPath} | {data_configPath}')

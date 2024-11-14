@@ -11,10 +11,10 @@ class testNN_w_Softmax(nn.Module):
         self.conv2 = nn.Conv2d(32, 64, kernel_size=3)
         self.conv3 = nn.Conv2d(64, 64, kernel_size=3)
         self.relu = nn.ReLU()
-        self.fc = nn.Linear(64 * 4 * 4, outputClasses)  # 64는 채널 수, 4*4는 마지막 풀링 레이어의 출력 크기
-        self.softmax = nn.Softmax(dim=1)  # use only with BCE
+        self.fc = nn.Linear(64 * 4 * 4, outputClasses)
+        self.softmax = nn.Softmax(dim=1)
 
-        self._initialize_weights()  # He 초기화 함수 호출
+        self._initialize_weights()
 
     def _initialize_weights(self):
         for m in self.modules():

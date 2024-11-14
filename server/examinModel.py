@@ -9,13 +9,15 @@ from util.util import scoring
 
 
 class examinModel:
-    def __init__(self, internalIdWithClients, cudaId, dataset, serverConfig, model, pthPath, seed, curRound, scorePath, scoreFileName):
+    def __init__(self, internalIdWithClients, cudaId, dataset, basicConfig, serverConfig, model, pthPath, seed, curRound, scorePath, scoreFileName):
         self.val_loader = None
         self.internalIdWithClients = internalIdWithClients
         self.dataset = copy.deepcopy(dataset)
         self.serverConfig = serverConfig
+        self.basicConfig = basicConfig
         self.examinData_batchSize = serverConfig['examinData_batchSize']
         self.model = model
+        print(f"examinator - cuda:{cudaId}" if is_available() else "cpu")
         self.device = torch.device(f"cuda:{cudaId}" if is_available() else "cpu")
         model_state_dict = torch.load(pthPath, map_location=self.device)
         self.model.load_state_dict(model_state_dict)
@@ -51,7 +53,7 @@ class examinModel:
         if self.serverConfig['costFunc'] == 'CEloss':
             pass
         elif self.serverConfig['costFunc'] == 'BCEloss':
-            validation_y = np.eye(10)[validation_y]  # BCE
+            validation_y = np.eye(self.basicConfig['numClass'])[validation_y]  # BCE
         elif self.serverConfig['costFunc'] == 'BCEWithLogitsLoss':
             pass
 
@@ -124,3 +126,6 @@ class examinModel:
         scoring(self.round, self.scorePath, self.scoreFileName, all_targets, all_outputs, acc, avg_loss)
 
         return avg_loss, acc
+
+    def __del__(self):
+        print('examiner offline')

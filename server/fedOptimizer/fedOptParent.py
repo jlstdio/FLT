@@ -12,12 +12,13 @@ def summary(model):
 
 
 class fedOptParent:
-    def __init__(self, rootModel):
+    def __init__(self, rootModel, cudaId, additionalInfo):
+        self.additionalInfo = additionalInfo
         self.rootModelStatic = copy.deepcopy(rootModel)
         self.resultRootModel = copy.deepcopy(self.rootModelStatic)
         self.clientsModels = []
         self.clientsLosses = []
-        self.device = torch.device(f"cuda" if is_available() else "cpu")
+        self.device = torch.device(f"cuda:{cudaId}" if is_available() else "cpu")
 
     def flush(self):
         self.resultRootModel = copy.deepcopy(self.rootModelStatic)

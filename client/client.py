@@ -1,5 +1,6 @@
 import copy
 import json
+import math
 import random
 import time
 from multiprocessing import Process
@@ -13,9 +14,47 @@ import torch
 import torch.nn.functional as F
 import numpy as np
 import os
+import seaborn as sns
 from torch.optim.lr_scheduler import CosineAnnealingLR
 from util.param_visualization import param_visualization
 from util.util import scoring
+
+
+# 히트맵 그리기 함수 (위에서 정의한 것을 포함)
+def plot_heatmap_multi_channel(data, title, save_path, max_channels=16):
+    if data.ndim == 4:
+        data = data[:, 0, :, :]
+    elif data.ndim == 3:
+        pass
+    elif data.ndim == 2:
+        plt.figure(figsize=(10, 8))
+        sns.heatmap(data, cmap='viridis')
+        plt.title(title)
+        plt.savefig(save_path)
+        plt.close()
+        return
+    else:
+        print(f"Unsupported data shape: {data.shape}")
+        return
+
+    num_channels = data.shape[0]
+    num_plots = min(num_channels, max_channels)
+
+    cols = min(4, num_plots)
+    rows = math.ceil(num_plots / cols)
+
+    plt.figure(figsize=(4 * cols, 4 * rows))
+
+    for i in range(num_plots):
+        plt.subplot(rows, cols, i + 1)
+        sns.heatmap(data[i], cmap='viridis', cbar=False)
+        plt.title(f'Channel {i}')
+        plt.axis('off')
+
+    plt.suptitle(title, fontsize=16)
+    plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+    plt.savefig(save_path)
+    plt.close()
 
 
 class Client(Process):
@@ -58,10 +97,11 @@ class Client(Process):
 
         self.metadataPath = self.basicConfig['clientsMetadataFolderPath'] + f"/client_{self.client_internalId}.json"
         self.trainDataPath = self.basicConfig['receivedDataPath'] + f"/client_{self.client_internalId}_trainData.json"
-        self.profileDataPath = self.basicConfig[
-                                   'receivedProfilePath'] + f'/client_{self.client_internalId}_profile.json'
+        self.profileDataPath = self.basicConfig['receivedProfilePath'] + f'/client_{self.client_internalId}_profile.json'
         self.clientProfile = None
         self.scorePath = scorePath + f'/{self.client_internalId}'
+        self.heatmap_dir = os.path.join(self.scorePath, "client_heatmaps", f"client_{client_internalId}")
+        os.makedirs(self.heatmap_dir, exist_ok=True)
 
         '''
         # Wrap the model with DataParallel
@@ -82,6 +122,19 @@ class Client(Process):
 
         print(f"Client {client_internalId} online")
 
+    def plot_parameter_diffs(self, initial_params, final_params):
+        """
+        파라미터 차이를 계산하고 히트맵으로 시각화합니다.
+        """
+        for name in initial_params:
+            if name in final_params:
+                param_diff = final_params[name] - initial_params[name]
+                # 히트맵 시각화
+                if param_diff.ndim >= 2:
+                    title = f"Parameter Difference: {name}"
+                    save_path = os.path.join(self.heatmap_dir, f"round{self.serverRound.value}_parameter_diff_{name}.png")
+                    plot_heatmap_multi_channel(param_diff, title, save_path)
+
     def loadData(self):
         train_ratio = round(self.clientProfile['clientMetadata']['dataSize'], 2)
         train_size = int(train_ratio * len(self.dataset))
@@ -101,8 +154,8 @@ class Client(Process):
         if self.config['costFunc'] == 'CEloss':
             pass
         elif self.config['costFunc'] == 'BCEloss':
-            train_y = np.eye(10)[train_y]  # BCE
-            valid_y = np.eye(10)[valid_y]  # BCE
+            train_y = np.eye(self.basicConfig['numClass'])[train_y]  # BCE
+            valid_y = np.eye(self.basicConfig['numClass'])[valid_y]  # BCE
         elif self.config['costFunc'] == 'BCEWithLogitsLoss':
             pass
 
@@ -126,6 +179,46 @@ class Client(Process):
         self.val_loader = DataLoader(val_dataset, batch_size=self.clientProfile['clientMetadata']['batchSize'], shuffle=True)
 
     def train(self, epochs=10):
+
+        # 활성화 맵 캡처를 위한 hook 등록
+        activation_maps_before = {}
+        activation_maps_after = {}
+
+        def get_activation_before(name):
+            def hook(model, input, output):
+                activation_maps_before[name] = output.detach().cpu().numpy()
+
+            return hook
+
+        def get_activation_after(name):
+            def hook(model, input, output):
+                activation_maps_after[name] = output.detach().cpu().numpy()
+
+            return hook
+
+        # 원하는 레이어에 hook 등록 (예: 모든 Conv2d 레이어)
+        hooks_before = []
+        hooks_after = []
+        for name, layer in self.model.named_modules():
+            if isinstance(layer, nn.Conv2d):
+                hooks_before.append(layer.register_forward_hook(get_activation_before(name)))
+                hooks_after.append(layer.register_forward_hook(get_activation_after(name)))
+
+        # 디렉토리 생성
+        os.makedirs(self.heatmap_dir, exist_ok=True)
+
+        # 학습 전 활성화 맵 저장 (예: 한 배치 데이터로)
+        self.model.eval()
+        with torch.no_grad():
+            for inputs, _ in self.train_loader:
+                inputs = inputs.to(self.device)
+                self.model(inputs)
+                break  # 첫 번째 배치만 사용
+        self.model.train()
+
+        # 학습 전 파라미터 저장
+        initial_params = {name: param.clone().detach().cpu().numpy() for name, param in self.model.named_parameters()}
+
         lr_origin = self.clientProfile['clientMetadata']['lr']
         T = self.clientProfile['clientMetadata']['T']
         lr = lr_origin / T
@@ -150,29 +243,7 @@ class Client(Process):
         all_targets = []
         all_outputs = []
 
-        # ====== Parameter heatmap ======
-        '''
-        # 시각화를 저장할 디렉토리 생성
-        visualization_dir = f"parameter_visualizations/{self.client_internalId}/round_{self.round}"
-        os.makedirs(visualization_dir, exist_ok=True)
-
-        initial_params = {}
-        final_params = {}
-
-        # 학습 시작 전 파라미터 저장
-        for name, param in self.model.named_parameters():
-            initial_params[name] = param.clone().detach().cpu().numpy()
-
-        # 학습 후 파라미터 저장 및 크기 출력 (옵션)
-        parameter_sizes_after_path = os.path.join(visualization_dir, "parameter_sizes.txt")
-        with open(parameter_sizes_after_path, "w") as f:
-            for name, param in self.model.named_parameters():
-                final_params[name] = param.clone().detach().cpu().numpy()
-                param_info = f"파라미터 이름: {name}, 크기: {tuple(param.size())}\n"
-                # print(param_info.strip())
-                f.write(param_info)
-        '''
-
+        # Train ##############################
         self.model.train()
         for epoch in range(epochs):
             running_loss = 0.0
@@ -219,15 +290,26 @@ class Client(Process):
 
             # self.wandbClient.sendLog(key=f"client{self.client_internalId} training loss", data=avg_loss)
             # print(f"Client {self.client_internalId} Epoch [{epoch + 1}/{epochs}][, Loss: {avg_loss:.4f}")
+        # ##### ##############################
 
-        '''
-        # ====== Parameter heatmap ======
-        for name, param in self.model.named_parameters():
-            final_params[name] = param.clone().detach().cpu().numpy()
-        # ====== ====== ====== ====== ====== ======
+        # 학습 후 파라미터 저장
+        final_params = {name: param.clone().detach().cpu().numpy() for name, param in self.model.named_parameters()}
 
-        param_visualization(visualization_dir, initial_params, final_params)
-        '''
+        # 학습 후 활성화 맵 캡처 (예: 한 배치 데이터로)
+        self.model.eval()
+        with torch.no_grad():
+            for inputs, _ in self.train_loader:
+                inputs = inputs.to(self.device)
+                self.model(inputs)
+                break  # 첫 번째 배치만 사용
+        self.model.train()
+
+        # hook 제거
+        for hook in hooks_before + hooks_after:
+            hook.remove()
+
+        # 파라미터 변화 시각화
+        self.plot_parameter_diffs(initial_params, final_params)
 
         # scale by 1 / T before sending it to server -> to adjust norm difference with different clients
         if T != 1:

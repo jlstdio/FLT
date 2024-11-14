@@ -1,8 +1,8 @@
 {
   "clientsType": [
     {
-      "numberOfClients": 100,
-      "classesPerClient": 2
+      "numberOfClients": 10,
+      "classesPerClient": 1
     }
   ]
 }
