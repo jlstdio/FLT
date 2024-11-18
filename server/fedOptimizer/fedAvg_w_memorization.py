@@ -1,5 +1,6 @@
 import os
 import random
+import shutil
 from typing import Any, Dict, List
 import torch
 import copy
@@ -51,8 +52,8 @@ class fedAvg_w_mem(fedOptParent):
             print(eligible_files)
 
             # 최대 'maximum_pth_to_mix'개 랜덤 선택
-            max_mix = self.serverConfig.get('maximum_pth_to_mix', self.serverConfig['maximum_pth_to_mix'])  # 기본값 10 설정
-            selected_files = random.sample(eligible_files, min(max_mix, len(eligible_files)))
+            maximum_pth_to_mix = self.additionalInfo['maximum_pth_to_mix']
+            selected_files = random.sample(eligible_files, min(maximum_pth_to_mix, len(eligible_files)))
 
             print(f'selected_files')
             print(selected_files)
@@ -72,6 +73,53 @@ class fedAvg_w_mem(fedOptParent):
         '''
 
         return self.resultRootModel
+
+    def afterWork(self):
+        M = self.additionalInfo['server_round_mem']
+        pth_files = self.additionalInfo['pth_files']
+        memorized_pth_path = self.additionalInfo['memorized_pth_path']
+        curRound = self.additionalInfo['curRound']
+
+        # Aggregate 끝난 후 -> 이번 round 에 가져온 models들 self.basicConfig['memorizedPthPath]의 위치에 옮기기
+        # 이번 round에 가져온 모델들을 memorizedPthPath로 이동
+        for filePath in pth_files:
+            fileName = os.path.basename(filePath)
+            client_id = int(fileName.split('_')[0])
+            new_file_name = f"{client_id}_round{curRound}.pth"
+            destination = os.path.join(memorized_pth_path, new_file_name)
+            shutil.move(filePath, destination)
+            print(f"Moved {filePath} to {destination}")
+
+        # memorizedPthPath에서 오래된 모델 삭제 (최신 M 라운드만 유지)
+        all_memorized_files = [
+            os.path.join(memorized_pth_path, f) for f in os.listdir(memorized_pth_path) if f.endswith('.pth')
+        ]
+
+        # 파일별 라운드 번호 추출
+        files_with_round = []
+        for mem_file in all_memorized_files:
+            mem_file_name = os.path.basename(mem_file)
+            try:
+                parts = mem_file_name.split('_round')
+                round_num = int(parts[1].replace('.pth', ''))
+                files_with_round.append((mem_file, round_num))
+            except (IndexError, ValueError):
+                print(f"Invalid memorized file name format: {mem_file_name}")
+                continue
+
+        # 라운드 번호 기준으로 정렬 (오래된 순)
+        files_with_round.sort(key=lambda x: x[1])
+
+        # 유지할 라운드 번호 범위
+        min_round_to_keep = curRound - M + 1
+
+        # 삭제할 파일 찾기
+        files_to_delete = [f for f, r in files_with_round if r < min_round_to_keep]
+
+        for filePath in files_to_delete:
+            os.remove(filePath)
+            print(f"Deleted old memorized model: {filePath}")
+
 
 '''
 unpacker = fedAvg()

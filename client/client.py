@@ -58,11 +58,12 @@ def plot_heatmap_multi_channel(data, title, save_path, max_channels=16):
 
 
 class Client(Process):
-    def __init__(self, client_internalId, clientsPerCuda, dataset, seed, networkConfig, basicConfig,
-                 clientType, config, model, serverRound, flipboard, turnFlag, startingCuda, sessionId, scorePath,
+    def __init__(self, client_internalId, dataset, networkConfig, basicConfig,
+                 clientType, config, model, serverRound, flipboard, turnFlag, sessionId, scorePath,
                  wandbQueue):
         super().__init__()
 
+        seed = basicConfig['seed']
         torch.manual_seed(seed)
         torch.cuda.manual_seed(seed)
         torch.cuda.manual_seed_all(seed)
@@ -71,7 +72,6 @@ class Client(Process):
         np.random.seed(seed)
         random.seed(seed)
 
-        self.startingCuda = startingCuda
         self.device = None
         self.model = None
         self.optimizer = None
@@ -92,8 +92,8 @@ class Client(Process):
         self.wandbQueue = wandbQueue
         self.serverRound = serverRound
         self.finishRate = 0.0
-        self.clientsPerCuda = clientsPerCuda
         self.clientType = int(clientType)
+        self.max_retries = 10
 
         self.metadataPath = self.basicConfig['clientsMetadataFolderPath'] + f"/client_{self.client_internalId}.json"
         self.trainDataPath = self.basicConfig['receivedDataPath'] + f"/client_{self.client_internalId}_trainData.json"
@@ -264,7 +264,7 @@ class Client(Process):
                 if self.config['costFunc'] == 'CEloss':
                     pass
                 elif self.config['costFunc'] == 'BCEloss':
-                    torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=self.config['normClip'])  # with BCE
+                    torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=self.config['normClip'])
                 elif self.config['costFunc'] == 'BCEWithLogitsLoss':
                     pass
 
@@ -452,8 +452,8 @@ class Client(Process):
         """ [OPEN] TRAIN """
         self.round = self.serverRound.value
         self.model = copy.deepcopy(self.modelReserved)
-        cudaId = self.sessionId[self.client_internalId] // self.clientsPerCuda
-        cudaId += self.startingCuda
+        cudaId = self.sessionId[self.client_internalId] // self.basicConfig['clientsPerCuda']
+        cudaId += self.basicConfig['startingCuda']
         self.device = torch.device(f"cuda:{cudaId}" if is_available() else "cpu")
         self.loadData()
         rootModelPath = self.basicConfig['rootModelFilePath']

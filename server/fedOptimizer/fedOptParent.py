@@ -1,4 +1,5 @@
 import copy
+import time
 import torch
 from numba.cuda import is_available
 from util.util import remove_module_prefix
@@ -12,12 +13,13 @@ def summary(model):
 
 
 class fedOptParent:
-    def __init__(self, rootModel, cudaId, additionalInfo):
+    def __init__(self, rootModel, cudaId, additionalInfo=None):
         self.additionalInfo = additionalInfo
         self.rootModelStatic = copy.deepcopy(rootModel)
         self.resultRootModel = copy.deepcopy(self.rootModelStatic)
         self.clientsModels = []
         self.clientsLosses = []
+        self.max_retries = 10
         self.device = torch.device(f"cuda:{cudaId}" if is_available() else "cpu")
 
     def flush(self):
@@ -40,4 +42,7 @@ class fedOptParent:
         # self.clients_losses.append(client_loss)
 
     def aggregate(self):
+        pass
+
+    def afterWork(self):
         pass

@@ -12,8 +12,13 @@ import numpy as np
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 import torch
-from examinModel import examinModel
-from picking_clients.sequential_pick_clients import sequential_pick_clients
+from server.examin_model import examin_model
+from server.fedOptimizer.fedAvg import fedAvg
+from server.fedOptimizer.fedAvg_w_memorization import fedAvg_w_mem
+from server.picking_clients.pickey_pick_clients import pickey_pick_clients
+from server.picking_clients.random_pick_clients import random_pick_clients
+from server.picking_clients.sequential_pick_clients import sequential_pick_clients
+from server.server_util import calculate_wait_time
 from util.util import dltAllFiles
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -122,17 +127,18 @@ def calculate_average(dataByType):
 
 
 class Server(Process):
-    def __init__(self, rootModel, cudaId, flModel, examinDataset, serverConfig, basicConfig, currentRound, flipboard,
-                 turnFlag, sessionId, startingCuda, pickedClientsList, resultPath, wandbQueue, totalDistributionSet):
+    def __init__(self, rootModel, examinDataset, serverConfig, basicConfig, currentRound, flipboard,
+                 turnFlag, sessionId, pickedClientsList, resultPath, wandbQueue, totalDistributionSet):
         super(Server, self).__init__()
         self.wandbQueue = wandbQueue
         self.serverConfig = serverConfig
         self.basicConfig = basicConfig
-        self.cudaId = cudaId + startingCuda
+        self.cudaId = basicConfig['updateClientsPerRound'] // basicConfig['clientsPerCuda']
+        self.cudaId += basicConfig['startingCuda']
         self.targetRound = serverConfig['flRound']
-        self.reservedRootModel = rootModel
+        self.reservedRootModel = copy.deepcopy(rootModel)
         self.rootModel = None
-        self.flModel = flModel
+        self.flModel = None
         self.turnFlag = turnFlag
         self.sessionId = sessionId
         self.currentRound = currentRound
@@ -152,8 +158,7 @@ class Server(Process):
         self.roundStartTime = 0
         self.resultPath = resultPath
         self.scorePath = resultPath + "/" + basicConfig["serverScoreFolderRoot"]
-        self.totalDistributionSet = totalDistributionSet
-        self.totalDistributionSet = {client: set(classes) for client, classes in self.totalDistributionSet.items()}
+        self.totalDistributionSet = {client: set(classes) for client, classes in totalDistributionSet.items()}
 
         self.recentPickedClasses = []
         self.recentPickedClasses_lock = threading.Lock()
@@ -233,79 +238,37 @@ class Server(Process):
             self.run_FL()
 
     def run_FL(self):
+        # initiate variables
         pth_files = [os.path.join(self.pth_folder, f) for f in os.listdir(self.pth_folder) if f.endswith('.pth')]
+        memorized_pth_path = self.basicConfig['memorizedPthPath']
 
-        # Round 및 대기 시간 계산
-        currentTime = time.time_ns()
-
-        # 라운드 시간 계산
-        roundTime = currentTime - self.roundStartTime
-        key = "server/performance/server round time"
-        logList = [key, roundTime, self.currentRound.value]
-        self.wandbQueue.put(logList)
-
-        # 대기 시간 계산
-        for file in pth_files:
-            fileName = file.split('/')[-1]
-            client_id = int(fileName.split('_')[0])
-
-            creation_time = os.path.getctime(file)
-            waitingTime = currentTime - creation_time
-            print(f'client{client_id} waited {waitingTime / 1e9:.2f} seconds')  # 초 단위로 변환
-            self.clientsWaitingTime[client_id] = waitingTime / 1e9  # 초 단위로 저장
-
-            # 대기 시간 로깅
-            key = f"client/efficiency/waitingTime/client{client_id} waiting time"
-            logList = [key, waitingTime / 1e9, self.currentRound.value]
-            self.wandbQueue.put(logList)
-
+        # need something to log?
+        # print(f'files at {memorized_pth_path} - {len(os.listdir(memorized_pth_path))}')
         print(f"Running round {self.currentRound.value} FL with {len(pth_files)} clients")
+
+        # tool - calculate_wait_time
+        calculate_wait_time(self.roundStartTime, pth_files, self.currentRound.value, self.clientsWaitingTime, self.wandbQueue)
+
+        ##########################################################
+        # SELECTING & INITIATING AGGREGATOR ######################
+        ##########################################################
+        if self.basicConfig['aggregate_mode'] == 'fedAvg':
+            self.flModel = fedAvg(self.reservedRootModel, self.cudaId)
+        elif self.basicConfig['aggregate_mode'] == 'fedAvg_w_mem':
+            additional_info_dict = {
+                'memorized_pth_path': memorized_pth_path,
+                'maximum_pth_to_mix': self.serverConfig['maximum_pth_to_mix'],
+                'server_round_mem': self.serverConfig['server_round_mem'],
+                'pth_files': pth_files,
+                'curRound': self.currentRound.value
+            }
+            self.flModel = fedAvg_w_mem(self.reservedRootModel, self.cudaId, additional_info_dict)
 
         self.flModel.flush()
 
         for filePath in pth_files:
             self.flModel.registerPth(filePath)
-
-        memorized_pth_path = self.basicConfig['memorizedPthPath']
-        print(f'files at {memorized_pth_path} - {len(os.listdir(memorized_pth_path))}')
-
-        if self.basicConfig['bartender'] and len(os.listdir(memorized_pth_path)) > 0:
-
-            os.makedirs(memorized_pth_path, exist_ok=True)
-
-            # memorizedPthPath에서 모든 pth 파일 가져오기
-            memorized_files = [os.path.join(memorized_pth_path, f) for f in os.listdir(memorized_pth_path) if
-                               f.endswith('.pth')]
-            print(f'memorized_files')
-            print(memorized_files)
-
-            eligible_files = []
-
-            for mem_file in memorized_files:
-                mem_file_name = os.path.basename(mem_file)
-                try:
-                    parts = mem_file_name.split('_round')
-                    client_session_id = int(parts[0])
-
-                    eligible_files.append(mem_file)
-
-                except (IndexError, ValueError):
-                    print(f"Invalid memorized file name format: {mem_file_name}")
-                    continue
-
-            print(f'eligible_files')
-            print(eligible_files)
-
-            # 최대 'maximum_pth_to_mix'개 랜덤 선택
-            max_mix = self.serverConfig.get('maximum_pth_to_mix', self.serverConfig['maximum_pth_to_mix'])  # 기본값 10 설정
-            selected_files = random.sample(eligible_files, min(max_mix, len(eligible_files)))
-
-            print(f'selected_files')
-            print(selected_files)
-
-            for filePath in selected_files:
-                self.flModel.registerPth(filePath)
-                print(f"Registered memorized model: {filePath}")
+        ###########################################################
 
         rootModelPath = self.basicConfig['rootModelFilePath']
         aggregatedModelPath = self.basicConfig['aggregateFilePath']
@@ -326,47 +289,7 @@ class Server(Process):
         # 4. 파라미터 차이 계산 및 시각화
         self.plot_parameter_diffs(pre_aggregate_params, post_aggregate_params)
 
-        if self.basicConfig['bartender']:
-            M = self.serverConfig['server_round_mem']
-            # Aggregate 끝난 후 -> 이번 round 에 가져온 models들 self.basicConfig['memorizedPthPath]의 위치에 옮기기
-            # 이번 round에 가져온 모델들을 memorizedPthPath로 이동
-            for filePath in pth_files:
-                fileName = os.path.basename(filePath)
-                client_id = int(fileName.split('_')[0])
-                new_file_name = f"{client_id}_round{self.currentRound.value}.pth"
-                destination = os.path.join(memorized_pth_path, new_file_name)
-                shutil.move(filePath, destination)
-                print(f"Moved {filePath} to {destination}")
-
-            # memorizedPthPath에서 오래된 모델 삭제 (최신 M 라운드만 유지)
-            all_memorized_files = [
-                os.path.join(memorized_pth_path, f) for f in os.listdir(memorized_pth_path) if f.endswith('.pth')
-            ]
-
-            # 파일별 라운드 번호 추출
-            files_with_round = []
-            for mem_file in all_memorized_files:
-                mem_file_name = os.path.basename(mem_file)
-                try:
-                    parts = mem_file_name.split('_round')
-                    round_num = int(parts[1].replace('.pth', ''))
-                    files_with_round.append((mem_file, round_num))
-                except (IndexError, ValueError):
-                    print(f"Invalid memorized file name format: {mem_file_name}")
-                    continue
-
-            # 라운드 번호 기준으로 정렬 (오래된 순)
-            files_with_round.sort(key=lambda x: x[1])
-
-            # 유지할 라운드 번호 범위
-            min_round_to_keep = self.currentRound.value - M + 1
-
-            # 삭제할 파일 찾기
-            files_to_delete = [f for f, r in files_with_round if r < min_round_to_keep]
-
-            for filePath in files_to_delete:
-                os.remove(filePath)
-                print(f"Deleted old memorized model: {filePath}")
+        self.flModel.afterWork()
 
         # 5. 집계 후 기존 코드 계속
         torch.save(self.rootModel.state_dict(), f'{aggregatedModelPath}/root_round{self.currentRound.value}.pth')
@@ -374,8 +297,7 @@ class Server(Process):
         torch.save(self.rootModel.state_dict(), f'{self.resultPath}/rootModel-{testName}.pth')
 
         # Model 검증
-        examinManager = examinModel(
-            self.internalIdWithClients,
+        examinManager = examin_model(
             self.cudaId,
             self.examinDataset,
             self.basicConfig,
@@ -447,7 +369,7 @@ class Server(Process):
         dltAllFiles(self.basicConfig['clientsNegotiationFolderPath'])
 
         print("negotiating...")
-        self.sequential_pick_clients()  # self.pickeyPickClients()  # self.pickClients()
+        self.pick_clients()  # self.pickeyPickClients()  # self.pickClients()
         self.roundStartTime = time.time_ns()  # log the round start time to track the round time
         self.currentRound.value += 1  # by up-counting the round value we're letting participants know about this round
 
@@ -480,8 +402,6 @@ class Server(Process):
         dltAllFiles(self.basicConfig['receivedProfilePath'])
 
     def update_picked_clients(self, pickedClients):
-
-        # 클라이언트 상태 업데이트
         for session_id, client_id in enumerate(pickedClients):
             self.sessionId[client_id] = session_id
             self.status[client_id] = False
@@ -496,18 +416,25 @@ class Server(Process):
     def pick_clients(self):
         pickedClients = []
         if self.serverConfig['pickMode'] == 'random':
-            pass
+            initial_data = {
+                "clients_per_round": self.updateClientsPerRound,
+                "total_clients": self.clientsList
+            }
+            pickedClients = random_pick_clients(initial_data, self.seed)
         elif self.serverConfig['pickMode'] == 'sequential':
             initial_data = {
                 "pair_size": self.updateClientsPerRound,
                 "total_clients": len(self.clientsList),
                 "curRound": self.currentRound.value
             }
-            sequential_pick_clients(initial_data)
-            pickedClients = sequential_pick_clients.pick_clients()
+            pickedClients = sequential_pick_clients(initial_data, self.seed)
         elif self.serverConfig['pickMode'] == 'pickey':
-            pass
+            initial_data = {
+                "none": None
+            }
+            pickedClients = pickey_pick_clients(initial_data, self.seed)
 
+        print(f'pickedClients - {pickedClients}')
         self.update_picked_clients(pickedClients)
 
     def run(self):

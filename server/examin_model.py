@@ -8,17 +8,16 @@ from torch import nn
 from util.util import scoring
 
 
-class examinModel:
-    def __init__(self, internalIdWithClients, cudaId, dataset, basicConfig, serverConfig, model, pthPath, seed, curRound, scorePath, scoreFileName):
+class examin_model:
+    def __init__(self, cudaId, dataset, basicConfig, serverConfig, model, pthPath, seed, curRound, scorePath, scoreFileName):
         self.val_loader = None
-        self.internalIdWithClients = internalIdWithClients
         self.dataset = copy.deepcopy(dataset)
         self.serverConfig = serverConfig
         self.basicConfig = basicConfig
         self.examinData_batchSize = serverConfig['examinData_batchSize']
         self.model = model
-        print(f"examinator - cuda:{cudaId}" if is_available() else "cpu")
         self.device = torch.device(f"cuda:{cudaId}" if is_available() else "cpu")
+
         model_state_dict = torch.load(pthPath, map_location=self.device)
         self.model.load_state_dict(model_state_dict)
         self.scoreFileName = scoreFileName

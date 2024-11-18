@@ -11,13 +11,14 @@ from util.util import clientTypeDistribution
 
 
 class FLNetwork(Process):
-    def __init__(self, numClients, basicConfig, clientsDatasetDict, clientConfig, networkConfig, modelToLoad, startingCuda, scorePath, wandbQueue):
+    def __init__(self, basicConfig, clientsDatasetDict, clientConfig, networkConfig, modelToLoad, scorePath,
+                 wandbQueue):
         super(FLNetwork, self).__init__()
         self.basicConfig = basicConfig
         self.clientsPerCuda = self.basicConfig['clientsPerCuda']
         self.serverRound = multiprocessing.Value('i', 0)
-        self.startingCuda = startingCuda
         self.lastRound = copy.deepcopy(self.serverRound.value)
+        numClients = self.basicConfig['numClient']
         self.flipboard = multiprocessing.Array('i', range(numClients))
         self.turnFlag = multiprocessing.Array('i', range(numClients))
         self.sessionId = multiprocessing.Array('i', range(numClients))
@@ -27,7 +28,7 @@ class FLNetwork(Process):
         self.clientConfig = clientConfig
         updateClientsPerRound = self.basicConfig['updateClientsPerRound']
         self.pickedClientsList = multiprocessing.Array('i', range(updateClientsPerRound))
-        self.modelToLoad = modelToLoad
+        self.modelToLoad = copy.deepcopy(modelToLoad)
         self.wandbQueue = wandbQueue
         self.networkConfig = networkConfig
         self.scorePath = scorePath
@@ -48,39 +49,40 @@ class FLNetwork(Process):
             self.turnFlag[i] = 0
 
         self.seed = self.basicConfig['seed']
-        torch.manual_seed(self.seed)  # torch를 거치는 모든 난수들의 생성순서를 고정한다
-        torch.cuda.manual_seed(self.seed)  # cuda를 사용하는 메소드들의 난수시드는 따로 고정해줘야한다
-        torch.cuda.manual_seed_all(self.seed)  # if use multi-GPU
-        torch.backends.cudnn.deterministic = True  # 딥러닝에 특화된 CuDNN의 난수시드도 고정
+        torch.manual_seed(self.seed)
+        torch.cuda.manual_seed(self.seed)
+        torch.cuda.manual_seed_all(self.seed)
+        torch.backends.cudnn.deterministic = True
         torch.backends.cudnn.benchmark = False
-        np.random.seed(self.seed)  # numpy를 사용할 경우 고정
-        random.seed(self.seed)  # 파이썬 자체 모듈 random 모듈의 시드 고정
+        np.random.seed(self.seed)
+        random.seed(self.seed)
 
         print('network online')
 
     def getSharedInfo(self):
-        return self.serverRound, self.flipboard, self.turnFlag, self.sessionId, self.pickedClientsList
+        return (self.serverRound,
+                self.flipboard,
+                self.turnFlag,
+                self.sessionId,
+                self.pickedClientsList)
 
     def wakeUpClients(self):
         print('waking up clients')
         clients = []
         for i in self.pickedClientsList:
             clients.append(Client(client_internalId=i,
-                       clientsPerCuda=self.clientsPerCuda,
-                       dataset=self.clientsDatasetDict[i],
-                       seed=self.seed,
-                       networkConfig=self.networkConfig,
-                       basicConfig=self.basicConfig,
-                       clientType=self.typesPerClients[i],
-                       config=self.clientConfig[int(self.typesPerClients[i])],
-                       model=self.modelToLoad[i],
-                       serverRound=self.serverRound,
-                       flipboard=self.flipboard,
-                       turnFlag=self.turnFlag,
-                       startingCuda=self.startingCuda,
-                       sessionId=self.sessionId,
-                       scorePath=self.scorePath,
-                       wandbQueue=self.wandbQueue))
+                                  dataset=self.clientsDatasetDict[i],
+                                  networkConfig=self.networkConfig,
+                                  basicConfig=self.basicConfig,
+                                  clientType=self.typesPerClients[i],
+                                  config=self.clientConfig[int(self.typesPerClients[i])],
+                                  model=copy.deepcopy(self.modelToLoad),
+                                  serverRound=self.serverRound,
+                                  flipboard=self.flipboard,
+                                  turnFlag=self.turnFlag,
+                                  sessionId=self.sessionId,
+                                  scorePath=self.scorePath,
+                                  wandbQueue=self.wandbQueue))
 
         # Start all clients
         for client in clients:
@@ -98,7 +100,6 @@ class FLNetwork(Process):
                 self.wakeUpClients()
             elif self.serverRound.value == -1:
                 break
-
 
     def __del__(self):
         print('network going down')

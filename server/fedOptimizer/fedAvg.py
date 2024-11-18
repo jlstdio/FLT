@@ -29,7 +29,7 @@ def average_weights(weights: List[Dict[str, torch.Tensor]]) -> Dict[str, torch.T
 
 
 class fedAvg(fedOptParent):
-    def __init__(self, rootModel, cudaId, additionalInfo):
+    def __init__(self, rootModel, cudaId, additionalInfo=None):
         super().__init__(rootModel, cudaId, additionalInfo)
 
     def aggregate(self):
