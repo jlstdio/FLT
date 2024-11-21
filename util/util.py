@@ -7,27 +7,43 @@ import pandas as pd
 def showDistribution(clientsDict, classes, name):
     num_clients = len(clientsDict)
     class_counts = {i: {cls: 0 for cls in classes} for i in range(num_clients)}
+    totalDistributionSet = {}
 
     # 각 클라이언트의 클래스별 데이터 개수 계산
     for client, data in clientsDict.items():
         for cls, _ in data:
             class_counts[client][cls] += 1
 
+    # save dataset distribution of clients
+    for client in range(num_clients):
+        clientDistributionSet = []
+
+        for cls in classes:
+            if class_counts[client][cls] > 0:
+                clientDistributionSet.append(cls)
+
+        totalDistributionSet[client] = clientDistributionSet
+
     # 플롯 그리기
-    fig, axes = plt.subplots(1, num_clients, figsize=(15, 5), sharey=True)
+    ncols = 10
+    nrows = (num_clients//ncols) + 1
+    fig, axes = plt.subplots(nrows=nrows, ncols=ncols, figsize=(ncols * 15, nrows * 10), sharey=True)
     if num_clients == 1:
         axes = [axes]
 
     for client in range(num_clients):
         counts = [class_counts[client][cls] for cls in classes]
-        axes[client].bar(classes, counts)
-        axes[client].set_title(f'Client {client}')
-        axes[client].set_xlabel('Class')
-        axes[client].set_ylabel('Count')
+        row = client // ncols
+        col = client % ncols
+        axes[row][col].bar(classes, counts)
+        axes[row][col].set_title(f'Client {client}')
+        axes[row][col].set_xlabel('Class')
+        axes[row][col].set_ylabel('Count')
 
     plt.tight_layout()
     # plt.show()
     plt.savefig(f'{name}.pdf')
+    return totalDistributionSet
 
 
 def scoring(round_num, scorePath, fileName, all_targets, all_outputs, acc, loss):

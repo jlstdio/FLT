@@ -23,6 +23,8 @@ class WandbClient(Process):
         wandb_run.define_metric("server/performance/server aggregated validation loss", step_metric="custom_step")
         wandb_run.define_metric("server/performance/server aggregated accuracy", step_metric="custom_step")
         wandb_run.define_metric("server/performance/server round time", step_metric="custom_step")
+        for i in range(basicConfig['numClass']):
+            wandb_run.define_metric(f"server/performance/aggregated class {i} accuracy", step_metric="custom_step")
 
         # Define client-specific metrics
         for i in range(num_clients):

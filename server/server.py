@@ -1,7 +1,12 @@
+import concurrent.futures
 import copy
+import csv
 import json
 import math
 import random
+import shutil
+import threading
+from collections import Counter
 from multiprocessing import Process
 import os
 import time
@@ -9,8 +14,72 @@ import numpy as np
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 import torch
-from server.examinModel import examinModel
+from server.examin_model import examin_model
+from server.fedOptimizer.fedAvg import fedAvg
+from server.fedOptimizer.fedAvg_w_memorization import fedAvg_w_mem
+from server.picking_clients.pickey_pick_clients import pickey_pick_clients
+from server.picking_clients.random_pick_clients import random_pick_clients
+from server.picking_clients.sequential_pick_clients import sequential_pick_clients
+from server.server_util import calculate_wait_time
 from util.util import dltAllFiles
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+
+def calculate_class_accuracies(all_targets, all_outputs, num_classes):
+    class_accuracies_per_round = []
+
+    output_to_class = np.argmax(all_outputs,axis=1)
+    print(len(output_to_class))
+
+    correctDict = {n: 0 for n in range(num_classes)}
+    targetNumDict = dict(Counter(all_targets))
+    accDict = {}
+
+    for target, output in zip(all_targets, output_to_class):
+        if target == output:
+            correctDict[target] += 1
+
+    for idx in correctDict.keys():
+        accDict[idx] = correctDict[idx] / targetNumDict[idx]
+
+    return accDict
+
+# 히트맵 그리기 함수 (위에서 정의한 것을 포함)
+def plot_heatmap_multi_channel(data, title, save_path, max_channels=64):
+    if data.ndim == 4:
+        data = data[:, 0, :, :]
+    elif data.ndim == 3:
+        pass
+    elif data.ndim == 2:
+        plt.figure(figsize=(10, 8))
+        sns.heatmap(data, cmap='viridis')
+        plt.title(title)
+        plt.savefig(save_path)
+        plt.close()
+        return
+    else:
+        print(f"Unsupported data shape: {data.shape}")
+        return
+
+    num_channels = data.shape[0]
+    num_plots = min(num_channels, max_channels)
+
+    cols = min(4, num_plots)
+    rows = math.ceil(num_plots / cols)
+
+    plt.figure(figsize=(4 * cols, 4 * rows))
+
+    for i in range(num_plots):
+        plt.subplot(rows, cols, i + 1)
+        sns.heatmap(data[i], cmap='viridis', cbar=False)
+        plt.title(f'Channel {i}')
+        plt.axis('off')
+
+    plt.suptitle(title, fontsize=16)
+    plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+    plt.savefig(save_path)
+    plt.close()
 
 
 class PTHFileHandler(FileSystemEventHandler):
@@ -79,17 +148,18 @@ def calculate_average(dataByType):
 
 
 class Server(Process):
-    def __init__(self, rootModel, cudaId, flModel, examinDataset, serverConfig, basicConfig, currentRound, flipboard,
-                 turnFlag, sessionId, startingCuda, pickedClientsList, resultPath, wandbQueue):
+    def __init__(self, rootModel, examinDataset, serverConfig, basicConfig, currentRound, flipboard,
+                 turnFlag, sessionId, pickedClientsList, resultPath, wandbQueue, totalDistributionSet):
         super(Server, self).__init__()
         self.wandbQueue = wandbQueue
         self.serverConfig = serverConfig
         self.basicConfig = basicConfig
-        self.cudaId = cudaId + startingCuda
+        self.cudaId = basicConfig['updateClientsPerRound'] // basicConfig['clientsPerCuda']
+        self.cudaId += basicConfig['startingCuda']
         self.targetRound = serverConfig['flRound']
-        self.reservedRootModel = rootModel
+        self.reservedRootModel = copy.deepcopy(rootModel)
         self.rootModel = None
-        self.flModel = flModel
+        self.flModel = None
         self.turnFlag = turnFlag
         self.sessionId = sessionId
         self.currentRound = currentRound
@@ -105,18 +175,26 @@ class Server(Process):
         self.lastAcc = 0.0
         self.numOfReceivedClients = 0
         self.seed = basicConfig['seed']
+        self.rng = np.random.default_rng(self.seed)
         self.numOfTypes = len(str(basicConfig['participantsInfo']).split('|'))
         self.roundStartTime = 0
         self.resultPath = resultPath
         self.scorePath = resultPath + "/" + basicConfig["serverScoreFolderRoot"]
+        self.totalDistributionSet = {client: set(classes) for client, classes in totalDistributionSet.items()}
 
-        torch.manual_seed(self.seed)  # torch를 거치는 모든 난수들의 생성순서를 고정한다
-        torch.cuda.manual_seed(self.seed)  # cuda를 사용하는 메소드들의 난수시드는 따로 고정해줘야한다
-        torch.cuda.manual_seed_all(self.seed)  # if use multi-GPU
-        torch.backends.cudnn.deterministic = True  # 딥러닝에 특화된 CuDNN의 난수시드도 고정
+        self.recentPickedClasses = []
+        self.recentPickedClasses_lock = threading.Lock()
+
+        torch.manual_seed(self.seed)
+        torch.cuda.manual_seed(self.seed)
+        torch.cuda.manual_seed_all(self.seed)
+        torch.backends.cudnn.deterministic = True
         torch.backends.cudnn.benchmark = False
-        np.random.seed(self.seed)  # numpy를 사용할 경우 고정
-        random.seed(self.seed)  # 파이썬 자체 모듈 random 모듈의 시드 고정
+        np.random.seed(self.seed)
+        random.seed(self.seed)
+
+        self.param_diff_dir = os.path.join(self.scorePath, "param_diff_dir")
+        os.makedirs(self.param_diff_dir, exist_ok=True)
 
         # mkdir
         self.pth_folder = str(self.basicConfig['receivedPthPath'])
@@ -131,6 +209,31 @@ class Server(Process):
         del self.rootModel
 
         print("Server online")
+
+    def plot_parameter_diffs(self, pre_params, post_params):
+        """
+        파라미터 차이를 계산하고 히트맵으로 시각화합니다.
+        """
+        for name in pre_params:
+            if name in post_params:
+                param_diff = post_params[name] - pre_params[name]
+                # 히트맵 시각화
+                if param_diff.ndim >= 2:
+                    title = f"Parameter Difference: {name}"
+                    save_path = os.path.join(self.param_diff_dir,
+                                             f"round{self.currentRound.value}_parameter_diff_{name}.png")
+                    plot_heatmap_multi_channel(param_diff, title, save_path)
+
+    def __getstate__(self):
+        state = self.__dict__.copy()
+        # Remove the lock from the state to avoid pickling errors
+        del state['recentPickedClasses_lock']
+        return state
+
+    def __setstate__(self, state):
+        self.__dict__.update(state)
+        # Reinitialize the lock after unpickling
+        self.recentPickedClasses_lock = threading.Lock()
 
     def process_new_file(self, file_name):
         try:
@@ -157,64 +260,90 @@ class Server(Process):
             self.run_FL()
 
     def run_FL(self):
+        # initiate variables
         pth_files = [os.path.join(self.pth_folder, f) for f in os.listdir(self.pth_folder) if f.endswith('.pth')]
+        memorized_pth_path = self.basicConfig['memorizedPthPath']
 
-        # calculating round & waiting time
-        currentTime = time.time_ns()
-
-        # calculating round time
-        roundTime = currentTime - self.roundStartTime
-        key = "server/performance/server round time"
-        logList = [key, roundTime, self.currentRound.value]
-        self.wandbQueue.put(logList)
-
-        # calculating waiting time
-        for file in pth_files:
-            # extracting data
-            fileName = file.split('/')[-1]
-            client_id = int(fileName.split('_')[0])
-
-            # extracting waiting time
-            creation_time = os.path.getctime(str(self.basicConfig['receivedPthPath']) + '/' + fileName)
-            waitingTime = currentTime - creation_time
-            print(f'client{client_id} waited {waitingTime}secs')
-            self.clientsWaitingTime[client_id] = waitingTime
-
-            # logging waiting time
-            key = f"client/efficiency/waitingTime/client{client_id} waiting time"
-            logList = [key, waitingTime, self.currentRound.value]
-            self.wandbQueue.put(logList)
-
+        # need something to log?
+        # print(f'files at {memorized_pth_path} - {len(os.listdir(memorized_pth_path))}')
         print(f"Running round {self.currentRound.value} FL with {len(pth_files)} clients")
+
+        # tool - calculate_wait_time
+        calculate_wait_time(self.roundStartTime, pth_files, self.currentRound.value, self.clientsWaitingTime, self.wandbQueue)
+
+        ##########################################################
+        # SELECTING & INITIATING AGGREGATOR ######################
+        ##########################################################
+        if self.basicConfig['aggregate_mode'] == 'fedAvg':
+            self.flModel = fedAvg(self.reservedRootModel, self.cudaId)
+        elif self.basicConfig['aggregate_mode'] == 'fedAvg_w_mem':
+            additional_info_dict = {
+                'memorized_pth_path': memorized_pth_path,
+                'maximum_pth_to_mix': self.serverConfig['maximum_pth_to_mix'],
+                'server_round_mem': self.serverConfig['server_round_mem'],
+                'pth_files': pth_files,
+                'curRound': self.currentRound.value
+            }
+            self.flModel = fedAvg_w_mem(self.reservedRootModel, self.cudaId, additional_info_dict)
 
         self.flModel.flush()
 
         for filePath in pth_files:
             self.flModel.registerPth(filePath)
+        ###########################################################
 
-        ## aggregating model
-        self.rootModel = copy.deepcopy(self.flModel.aggregate())
-
-        ## saving model
         rootModelPath = self.basicConfig['rootModelFilePath']
         aggregatedModelPath = self.basicConfig['aggregateFilePath']
         testName = self.basicConfig['testName']
+
+        # 1. 집계 전에 글로벌 모델의 파라미터 저장
+        model_state_dict = torch.load(f'{rootModelPath}/rootModel-{testName}.pth')
+        post_rootModel = copy.deepcopy(self.reservedRootModel)
+        post_rootModel.load_state_dict(model_state_dict)
+        pre_aggregate_params = copy.deepcopy(post_rootModel.state_dict())
+
+        # 2. 모델 집계 수행
+        self.rootModel = copy.deepcopy(self.flModel.aggregate())
+
+        # 3. 집계 후 글로벌 모델의 파라미터 저장
+        post_aggregate_params = copy.deepcopy(self.rootModel.state_dict())
+
+        # 4. 파라미터 차이 계산 및 시각화
+        self.plot_parameter_diffs(pre_aggregate_params, post_aggregate_params)
+
+        self.flModel.afterWork()
+
+        # 5. 집계 후 기존 코드 계속
         torch.save(self.rootModel.state_dict(), f'{aggregatedModelPath}/root_round{self.currentRound.value}.pth')
         torch.save(self.rootModel.state_dict(), f'{rootModelPath}/rootModel-{testName}.pth')
         torch.save(self.rootModel.state_dict(), f'{self.resultPath}/rootModel-{testName}.pth')
 
-        examinManager = examinModel(self.internalIdWithClients,
-                                    self.cudaId,
-                                    self.examinDataset,
-                                    self.serverConfig,
-                                    self.rootModel,
-                                    f'{rootModelPath}/rootModel-{testName}.pth',
-                                    self.seed,
-                                    self.currentRound.value,
-                                    self.scorePath,
-                                    'aggregate.csv')
+        # Model 검증
+        examinManager = examin_model(
+            self.cudaId,
+            self.examinDataset,
+            self.basicConfig,
+            self.serverConfig,
+            self.rootModel,
+            f'{rootModelPath}/rootModel-{testName}.pth',
+            self.seed,
+            self.currentRound.value,
+            self.scorePath,
+            'aggregate.csv'
+        )
         examinManager.loadData()
-        loss, acc = examinManager.examin()
+        loss, acc, all_targets, all_outputs = examinManager.examin()
+        class_accuracies = calculate_class_accuracies(all_targets, all_outputs, self.basicConfig['numClass'])
+
+        # 결과 출력
+        for classIdx in class_accuracies.keys():
+            print(f"Round {classIdx} class accuracies: {class_accuracies[classIdx]}")
+            key = f"server/performance/aggregated class {classIdx} accuracy"
+            percent_acc = class_accuracies[classIdx] * 100.0
+            logList = [key, percent_acc, self.currentRound.value]
+            self.wandbQueue.put(logList)
+
+        print('-------------')
 
         key = "server/performance/server aggregated validation loss"
         logList = [key, loss, self.currentRound.value]
@@ -223,6 +352,8 @@ class Server(Process):
         key = "server/performance/server aggregated accuracy"
         logList = [key, acc, self.currentRound.value]
         self.wandbQueue.put(logList)
+
+        del examinManager
 
         dataByType, dataByType_pre = processDataByClientType(self.basicConfig['receivedDataPath'], self.numOfTypes)
 
@@ -234,7 +365,6 @@ class Server(Process):
             logList = [key, data['avg_acc'], self.currentRound.value]
             self.wandbQueue.put(logList)
 
-        for idx, data in enumerate(average_results):
             key = f"clientType/performance/validation/loss/client type{idx} validation loss"
             logList = [key, data['avg_loss'], self.currentRound.value]
             self.wandbQueue.put(logList)
@@ -244,7 +374,6 @@ class Server(Process):
             logList = [key, data['avg_acc'], self.currentRound.value]
             self.wandbQueue.put(logList)
 
-        for idx, data in enumerate(average_results_pre):
             key = f"clientType/performance/pre-validation/loss/client type{idx} validation loss"
             logList = [key, data['avg_loss'], self.currentRound.value]
             self.wandbQueue.put(logList)
@@ -261,7 +390,8 @@ class Server(Process):
 
         # Delete all received pth files
         for file in pth_files:
-            os.remove(file)
+            if os.path.exists(file):
+                os.remove(file)
 
         if self.targetRound > self.currentRound.value:
             self.negotiate()
@@ -273,7 +403,7 @@ class Server(Process):
         dltAllFiles(self.basicConfig['clientsNegotiationFolderPath'])
 
         print("negotiating...")
-        self.pickClients()
+        self.pick_clients()
         self.roundStartTime = time.time_ns()  # log the round start time to track the round time
         self.currentRound.value += 1  # by up-counting the round value we're letting participants know about this round
 
@@ -288,7 +418,7 @@ class Server(Process):
             time.sleep(1.0)
             waitCount += 1
 
-        ## modify for negotiation
+        # modify for negotiation
         for path in os.listdir(self.basicConfig['receivedProfilePath']):
             clientId = int((str(path).split('/')[-1]).split('_')[1])
 
@@ -303,29 +433,63 @@ class Server(Process):
                     json.dump(clientProfile, file, indent=4)
                     print(f"parameter sent to client {clientId}")
 
-    def pickClients(self):
-        pickedClients = np.random.choice(self.clientsList, self.updateClientsPerRound, replace=False)
-        session_id = 0
+        dltAllFiles(self.basicConfig['receivedProfilePath'])
 
-        for i in pickedClients:
-            self.sessionId[i] = session_id
-            session_id += 1
-            self.status[i] = False
-            self.turnFlag[i] = 1  # mark the client which is picked
-            self.flipboard[i] = 0  # mark as file not sent
+    def update_picked_clients(self, pickedClients):
+        for session_id, client_id in enumerate(pickedClients):
+            self.sessionId[client_id] = session_id
+            self.status[client_id] = False
+            self.turnFlag[client_id] = 1  # mark the client which is picked
+            self.flipboard[client_id] = 0  # mark as file not sent
 
         for i in range(self.updateClientsPerRound):
             self.pickedClientsList[i] = pickedClients[i]
 
-    def startFL(self):
-        print('informing to clients')
-        self.negotiate()
+        # CSV 파일에 self.round와 pickedClientsList 저장
+        with open(f'{self.scorePath}/picked_clients.csv', mode='a', newline='') as file:
+            writer = csv.writer(file)
+
+            # self.round가 1일 때 컬럼 이름 추가
+            if self.currentRound.value == 0:
+                writer.writerow(["Round", "PickedList"])
+
+            # pickedClientsList를 쉼표로 구분된 문자열로 저장
+            row_to_write = [self.currentRound.value + 1, ",".join(map(str, self.pickedClientsList))]
+            writer.writerow(row_to_write)
+
+        print(f"Picked Clients for this round: {pickedClients}")
+
+    def pick_clients(self):
+        pickedClients = []
+        if self.serverConfig['pickMode'] == 'random':
+            initial_data = {
+                "clients_per_round": self.updateClientsPerRound,
+                "total_clients": self.basicConfig['numClient']
+            }
+            pickedClients = random_pick_clients(initial_data, self.rng)
+        elif self.serverConfig['pickMode'] == 'sequential':
+            initial_data = {
+                "pair_size": self.updateClientsPerRound,
+                "total_clients": self.basicConfig['numClient'],
+                "curRound": self.currentRound.value
+            }
+            pickedClients = sequential_pick_clients(initial_data)
+        elif self.serverConfig['pickMode'] == 'pickey':
+            initial_data = {
+                "none": None
+            }
+            pickedClients = pickey_pick_clients(initial_data, self.rng)
+
+        self.update_picked_clients(pickedClients)
 
     def run(self):
         event_handler = PTHFileHandler(self)
         observer = Observer()
         observer.schedule(event_handler, self.pth_folder, recursive=False)
         observer.start()
+
+        print('informing to clients')
+        self.negotiate()
 
         try:
             while True:
