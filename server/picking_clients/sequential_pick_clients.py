@@ -1,5 +1,5 @@
 
-def sequential_pick_clients(initial_data, _):
+def sequential_pick_clients(initial_data):
     pair_size = initial_data['pair_size']
     total_clients = initial_data['total_clients']
     curRound = initial_data['curRound']

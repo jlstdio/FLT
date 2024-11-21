@@ -25,16 +25,20 @@ def showDistribution(clientsDict, classes, name):
         totalDistributionSet[client] = clientDistributionSet
 
     # 플롯 그리기
-    fig, axes = plt.subplots(1, num_clients, figsize=(15, 5), sharey=True)
+    ncols = 10
+    nrows = (num_clients//ncols) + 1
+    fig, axes = plt.subplots(nrows=nrows, ncols=ncols, figsize=(ncols * 15, nrows * 10), sharey=True)
     if num_clients == 1:
         axes = [axes]
 
     for client in range(num_clients):
         counts = [class_counts[client][cls] for cls in classes]
-        axes[client].bar(classes, counts)
-        axes[client].set_title(f'Client {client}')
-        axes[client].set_xlabel('Class')
-        axes[client].set_ylabel('Count')
+        row = client // ncols
+        col = client % ncols
+        axes[row][col].bar(classes, counts)
+        axes[row][col].set_title(f'Client {client}')
+        axes[row][col].set_xlabel('Class')
+        axes[row][col].set_ylabel('Count')
 
     plt.tight_layout()
     # plt.show()

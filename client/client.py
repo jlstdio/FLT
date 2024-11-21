@@ -136,47 +136,51 @@ class Client(Process):
                     plot_heatmap_multi_channel(param_diff, title, save_path)
 
     def loadData(self):
-        train_ratio = round(self.clientProfile['clientMetadata']['dataSize'], 2)
-        train_size = int(train_ratio * len(self.dataset))
+        try:
+            train_ratio = round(self.clientProfile['clientMetadata']['dataSize'], 2)
+            train_size = int(train_ratio * len(self.dataset))
 
-        train_data = self.dataset[:train_size]
-        test_data = self.dataset[train_size:]
+            train_data = self.dataset[:train_size]
+            test_data = self.dataset[train_size:]
 
-        train_y, train_x = zip(*train_data)
-        valid_y, valid_x = zip(*test_data)
+            train_y, train_x = zip(*train_data)
+            valid_y, valid_x = zip(*test_data)
 
-        train_x = np.array(train_x)
-        train_y = np.array(train_y)
+            train_x = np.array(train_x)
+            train_y = np.array(train_y)
 
-        valid_x = np.array(valid_x)
-        valid_y = np.array(valid_y)
+            valid_x = np.array(valid_x)
+            valid_y = np.array(valid_y)
 
-        if self.config['costFunc'] == 'CEloss':
-            pass
-        elif self.config['costFunc'] == 'BCEloss':
-            train_y = np.eye(self.basicConfig['numClass'])[train_y]  # BCE
-            valid_y = np.eye(self.basicConfig['numClass'])[valid_y]  # BCE
-        elif self.config['costFunc'] == 'BCEWithLogitsLoss':
-            pass
+            if self.config['costFunc'] == 'CEloss':
+                pass
+            elif self.config['costFunc'] == 'BCEloss':
+                train_y = np.eye(self.basicConfig['numClass'])[train_y]  # BCE
+                valid_y = np.eye(self.basicConfig['numClass'])[valid_y]  # BCE
+            elif self.config['costFunc'] == 'BCEWithLogitsLoss':
+                pass
 
-        X_train = torch.tensor(train_x, dtype=torch.float32).permute(0, 3, 1, 2)
-        X_val = torch.tensor(valid_x, dtype=torch.float32).permute(0, 3, 1, 2)
+            X_train = torch.tensor(train_x, dtype=torch.float32).permute(0, 3, 1, 2)
+            X_val = torch.tensor(valid_x, dtype=torch.float32).permute(0, 3, 1, 2)
 
-        if self.config['costFunc'] == 'CEloss':
-            y_train = torch.tensor(train_y, dtype=torch.long)  # CE
-            y_val = torch.tensor(valid_y, dtype=torch.long)  # CE
-        elif self.config['costFunc'] == 'BCEloss':
-            y_train = torch.tensor(train_y, dtype=torch.float32)  # BCE
-            y_val = torch.tensor(valid_y, dtype=torch.float32)  # BCE
-        elif self.config['costFunc'] == 'BCEWithLogitsLoss':
-            y_train = torch.tensor(train_y, dtype=torch.long)  # CE
-            y_val = torch.tensor(valid_y, dtype=torch.long)  # CE
+            if self.config['costFunc'] == 'CEloss':
+                y_train = torch.tensor(train_y, dtype=torch.long)  # CE
+                y_val = torch.tensor(valid_y, dtype=torch.long)  # CE
+            elif self.config['costFunc'] == 'BCEloss':
+                y_train = torch.tensor(train_y, dtype=torch.float32)  # BCE
+                y_val = torch.tensor(valid_y, dtype=torch.float32)  # BCE
+            elif self.config['costFunc'] == 'BCEWithLogitsLoss':
+                y_train = torch.tensor(train_y, dtype=torch.long)  # CE
+                y_val = torch.tensor(valid_y, dtype=torch.long)  # CE
 
-        train_dataset = TensorDataset(X_train, y_train)
-        val_dataset = TensorDataset(X_val, y_val)
+            train_dataset = TensorDataset(X_train, y_train)
+            val_dataset = TensorDataset(X_val, y_val)
 
-        self.train_loader = DataLoader(train_dataset, batch_size=self.clientProfile['clientMetadata']['batchSize'], shuffle=True)
-        self.val_loader = DataLoader(val_dataset, batch_size=self.clientProfile['clientMetadata']['batchSize'], shuffle=True)
+            self.train_loader = DataLoader(train_dataset, batch_size=self.clientProfile['clientMetadata']['batchSize'], shuffle=True)
+            self.val_loader = DataLoader(val_dataset, batch_size=self.clientProfile['clientMetadata']['batchSize'], shuffle=True)
+        except Exception as e:
+            print(f'client{self.client_internalId} - {e}')
+
 
     def train(self, epochs=10):
 

@@ -157,9 +157,17 @@ if __name__ == "__main__":
     networkConfigRoot = './config/networkConfig'
     dataConfigRoot = './config/datasetConfig'
 
-    networkConfig_PathList = [f'{networkConfigRoot}/config_m6 - test 0-3.json']
+    networkConfig_PathList = [f'{networkConfigRoot}/config_m6 - test 0-4.json',
+                              f'{networkConfigRoot}/config_m6 - test 0-3.json',
+                              f'{networkConfigRoot}/config_m6 - test 0-4.json',
+                              f'{networkConfigRoot}/config_m6 - test 0-3.json',
+                              f'{networkConfigRoot}/config_m6 - test 0-4.json']
 
-    dataConfig_PathList = [f'{dataConfigRoot}/dataConfig_dirichlet.json']
+    dataConfig_PathList = [f'{dataConfigRoot}/dataConfig_dirichlet_2.json',
+                           f'{dataConfigRoot}/dataConfig_dirichlet_3.json',
+                           f'{dataConfigRoot}/dataConfig_dirichlet_3.json',
+                           f'{dataConfigRoot}/dataConfig_dirichlet_4.json',
+                           f'{dataConfigRoot}/dataConfig_dirichlet_4.json']
 
     for network_configPath, data_configPath in zip(networkConfig_PathList, dataConfig_PathList):
         print(f'running with {network_configPath} | {data_configPath}')

@@ -2,9 +2,7 @@ import random
 import numpy as np
 
 
-def clustered_pick_clients(initial_data, seed):
-    np.random.seed(seed)
-    random.seed(seed)
+def clustered_pick_clients(initial_data):
     pair_size = initial_data['pair_size']
     total_clients = initial_data['total_clients']
     curRound = initial_data['curRound']

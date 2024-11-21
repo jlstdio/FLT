@@ -1,4 +1,4 @@
-def pickey_pick_clients(_, seed):
+def pickey_pick_clients(_, rng):
     N = self.serverConfig['dont_pick_recent_classes']
 
     # 최근 N 라운드의 클래스 집합을 생성

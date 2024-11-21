@@ -1,10 +1,12 @@
 import concurrent.futures
 import copy
+import csv
 import json
 import math
 import random
 import shutil
 import threading
+from collections import Counter
 from multiprocessing import Process
 import os
 import time
@@ -23,6 +25,25 @@ from util.util import dltAllFiles
 import matplotlib.pyplot as plt
 import seaborn as sns
 
+
+def calculate_class_accuracies(all_targets, all_outputs, num_classes):
+    class_accuracies_per_round = []
+
+    output_to_class = np.argmax(all_outputs,axis=1)
+    print(len(output_to_class))
+
+    correctDict = {n: 0 for n in range(num_classes)}
+    targetNumDict = dict(Counter(all_targets))
+    accDict = {}
+
+    for target, output in zip(all_targets, output_to_class):
+        if target == output:
+            correctDict[target] += 1
+
+    for idx in correctDict.keys():
+        accDict[idx] = correctDict[idx] / targetNumDict[idx]
+
+    return accDict
 
 # 히트맵 그리기 함수 (위에서 정의한 것을 포함)
 def plot_heatmap_multi_channel(data, title, save_path, max_channels=64):
@@ -154,6 +175,7 @@ class Server(Process):
         self.lastAcc = 0.0
         self.numOfReceivedClients = 0
         self.seed = basicConfig['seed']
+        self.rng = np.random.default_rng(self.seed)
         self.numOfTypes = len(str(basicConfig['participantsInfo']).split('|'))
         self.roundStartTime = 0
         self.resultPath = resultPath
@@ -310,8 +332,18 @@ class Server(Process):
             'aggregate.csv'
         )
         examinManager.loadData()
-        loss, acc = examinManager.examin()
-        del examinManager
+        loss, acc, all_targets, all_outputs = examinManager.examin()
+        class_accuracies = calculate_class_accuracies(all_targets, all_outputs, self.basicConfig['numClass'])
+
+        # 결과 출력
+        for classIdx in class_accuracies.keys():
+            print(f"Round {classIdx} class accuracies: {class_accuracies[classIdx]}")
+            key = f"server/performance/aggregated class {classIdx} accuracy"
+            percent_acc = class_accuracies[classIdx] * 100.0
+            logList = [key, percent_acc, self.currentRound.value]
+            self.wandbQueue.put(logList)
+
+        print('-------------')
 
         key = "server/performance/server aggregated validation loss"
         logList = [key, loss, self.currentRound.value]
@@ -320,6 +352,8 @@ class Server(Process):
         key = "server/performance/server aggregated accuracy"
         logList = [key, acc, self.currentRound.value]
         self.wandbQueue.put(logList)
+
+        del examinManager
 
         dataByType, dataByType_pre = processDataByClientType(self.basicConfig['receivedDataPath'], self.numOfTypes)
 
@@ -369,7 +403,7 @@ class Server(Process):
         dltAllFiles(self.basicConfig['clientsNegotiationFolderPath'])
 
         print("negotiating...")
-        self.pick_clients()  # self.pickeyPickClients()  # self.pickClients()
+        self.pick_clients()
         self.roundStartTime = time.time_ns()  # log the round start time to track the round time
         self.currentRound.value += 1  # by up-counting the round value we're letting participants know about this round
 
@@ -411,6 +445,18 @@ class Server(Process):
         for i in range(self.updateClientsPerRound):
             self.pickedClientsList[i] = pickedClients[i]
 
+        # CSV 파일에 self.round와 pickedClientsList 저장
+        with open(f'{self.scorePath}/picked_clients.csv', mode='a', newline='') as file:
+            writer = csv.writer(file)
+
+            # self.round가 1일 때 컬럼 이름 추가
+            if self.currentRound.value == 0:
+                writer.writerow(["Round", "PickedList"])
+
+            # pickedClientsList를 쉼표로 구분된 문자열로 저장
+            row_to_write = [self.currentRound.value + 1, ",".join(map(str, self.pickedClientsList))]
+            writer.writerow(row_to_write)
+
         print(f"Picked Clients for this round: {pickedClients}")
 
     def pick_clients(self):
@@ -418,23 +464,22 @@ class Server(Process):
         if self.serverConfig['pickMode'] == 'random':
             initial_data = {
                 "clients_per_round": self.updateClientsPerRound,
-                "total_clients": self.clientsList
+                "total_clients": self.basicConfig['numClient']
             }
-            pickedClients = random_pick_clients(initial_data, self.seed)
+            pickedClients = random_pick_clients(initial_data, self.rng)
         elif self.serverConfig['pickMode'] == 'sequential':
             initial_data = {
                 "pair_size": self.updateClientsPerRound,
-                "total_clients": len(self.clientsList),
+                "total_clients": self.basicConfig['numClient'],
                 "curRound": self.currentRound.value
             }
-            pickedClients = sequential_pick_clients(initial_data, self.seed)
+            pickedClients = sequential_pick_clients(initial_data)
         elif self.serverConfig['pickMode'] == 'pickey':
             initial_data = {
                 "none": None
             }
-            pickedClients = pickey_pick_clients(initial_data, self.seed)
+            pickedClients = pickey_pick_clients(initial_data, self.rng)
 
-        print(f'pickedClients - {pickedClients}')
         self.update_picked_clients(pickedClients)
 
     def run(self):

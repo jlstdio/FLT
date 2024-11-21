@@ -124,7 +124,7 @@ class examin_model:
 
         scoring(self.round, self.scorePath, self.scoreFileName, all_targets, all_outputs, acc, avg_loss)
 
-        return avg_loss, acc
+        return avg_loss, acc, all_targets, all_outputs
 
     def __del__(self):
         print('examiner offline')
