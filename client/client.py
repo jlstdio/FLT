@@ -16,6 +16,8 @@ import numpy as np
 import os
 import seaborn as sns
 from torch.optim.lr_scheduler import CosineAnnealingLR
+
+from util.fisher import compute_fisher
 from util.param_visualization import param_visualization
 from util.util import scoring
 
@@ -295,6 +297,9 @@ class Client(Process):
             # self.wandbClient.sendLog(key=f"client{self.client_internalId} training loss", data=avg_loss)
             # print(f"Client {self.client_internalId} Epoch [{epoch + 1}/{epochs}][, Loss: {avg_loss:.4f}")
         # ##### ##############################
+
+        # fisher 정보 계산
+        fisher = compute_fisher(client_model, dataloader, criterion)
 
         # 학습 후 파라미터 저장
         final_params = {name: param.clone().detach().cpu().numpy() for name, param in self.model.named_parameters()}

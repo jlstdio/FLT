@@ -17,6 +17,8 @@ import torch
 from server.examin_model import examin_model
 from server.fedOptimizer.fedAvg import fedAvg
 from server.fedOptimizer.fedAvg_w_memorization import fedAvg_w_mem
+from server.fedOptimizer.fedCurv_fisher_calc_client import fedCurv_fisher_calc_client
+from server.fedOptimizer.fedCurv_fisher_calc_server import fedCurv_fisher_calc_server
 from server.picking_clients.pickey_pick_clients import pickey_pick_clients
 from server.picking_clients.random_pick_clients import random_pick_clients
 from server.picking_clients.sequential_pick_clients import sequential_pick_clients
@@ -285,6 +287,24 @@ class Server(Process):
                 'curRound': self.currentRound.value
             }
             self.flModel = fedAvg_w_mem(self.reservedRootModel, self.cudaId, additional_info_dict)
+        elif self.basicConfig['aggregate_mode'] == 'fedCurv_fisher_client':
+            additional_info_dict = {
+                'memorized_pth_path': memorized_pth_path,
+                'maximum_pth_to_mix': self.serverConfig['maximum_pth_to_mix'],
+                'server_round_mem': self.serverConfig['server_round_mem'],
+                'pth_files': pth_files,
+                'curRound': self.currentRound.value
+            }
+            self.flModel = fedCurv_fisher_calc_client(self.reservedRootModel, self.cudaId, additional_info_dict)
+        elif self.basicConfig['aggregate_mode'] == 'fedCurv_fisher_server':
+            additional_info_dict = {
+                'memorized_pth_path': memorized_pth_path,
+                'maximum_pth_to_mix': self.serverConfig['maximum_pth_to_mix'],
+                'server_round_mem': self.serverConfig['server_round_mem'],
+                'pth_files': pth_files,
+                'curRound': self.currentRound.value
+            }
+            self.flModel = fedCurv_fisher_calc_server(self.reservedRootModel, self.cudaId, additional_info_dict)
 
         self.flModel.flush()
 
