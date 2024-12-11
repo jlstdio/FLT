@@ -16,12 +16,14 @@ import numpy as np
 import os
 import seaborn as sns
 from torch.optim.lr_scheduler import CosineAnnealingLR
+
+from client.util_client import target_type_convert, criterion_select
 from util.fisher import compute_fisher, save_fisher, load_fisher
 from util.param_visualization import param_visualization
 from util.util import scoring
 
 
-class Client(Process):
+class client_parent(Process):
     def __init__(self, client_internalId, dataset, networkConfig, basicConfig,
                  clientType, config, model, serverRound, flipboard, turnFlag, sessionId, scorePath,
                  wandbQueue):
@@ -81,22 +83,7 @@ class Client(Process):
         self.heatmap_dir = os.path.join(self.scorePath, "client_heatmaps", f"client_{client_internalId}")
         os.makedirs(self.heatmap_dir, exist_ok=True)
 
-        '''
-        # Wrap the model with DataParallel
-        if torch.cuda.device_count() > 1:
-            self.model = nn.DataParallel(self.model)
-        '''
-        if self.config['costFunc'] == 'CEloss':
-            self.criterion = nn.CrossEntropyLoss()
-        elif self.config['costFunc'] == 'BCEloss':
-            self.criterion = nn.BCELoss()
-        elif self.config['costFunc'] == 'BCEWithLogitsLoss':
-            self.criterion = nn.BCEWithLogitsLoss()
-        '''
-        if is_available():
-            set_per_process_memory_fraction(self.config['memFrac'], self.device.index)
-            torch.backends.cudnn.benchmark = True
-        '''
+        self.criterion = criterion_select(self.config['costFunc'])
 
         print(f"Client {client_internalId} online")
 
@@ -146,11 +133,10 @@ class Client(Process):
         except Exception as e:
             print(f'client{self.client_internalId} - {e}')
 
-    def train(self, epochs=10):
+    def logs_before_train(self):
         lr_origin = self.clientProfile['clientMetadata']['lr']
         T = self.clientProfile['clientMetadata']['T']
         lr = lr_origin / T
-        # lr = round(lr_origin / T, 6)
 
         key_lr_origin = f"client/metadata/learningRate-origin/client{self.client_internalId} origin lr"
         key_lr_adjusted = f"client/metadata/learningRate-adjusted/client{self.client_internalId} adjusted lr"
@@ -164,98 +150,8 @@ class Client(Process):
         self.wandbQueue.put(logList_lr_adjusted)
         self.wandbQueue.put(logList_temperature)
 
-        logList = None
-        self.optimizer = optim.SGD(self.model.parameters(), lr=lr)
-        print(f'client{self.client_internalId} lr at {lr}')
-
-        all_targets = []
-        all_outputs = []
-
-        old_means = {}
-        if str(self.basicConfig['aggregate_mode']).__contains__('fisher'):
-            model_for_fisher = copy.deepcopy(self.modelReserved).to(self.device)
-            old_params = {n: p for n, p in model_for_fisher.named_parameters() if p.requires_grad}
-            for n, p in old_params.items():
-                old_means[n] = p.clone().detach()
-
-        # Train ##############################
-        self.model.train()
-        for epoch in range(epochs):
-            running_loss = 0.0
-
-            for inputs, targets in self.train_loader:
-                inputs = inputs.to(self.device)
-                if self.config['costFunc'] == 'CEloss':
-                    targets = targets.long().to(self.device)  # CE
-                elif self.config['costFunc'] == 'BCEloss':
-                    targets = targets.to(self.device)  # BCE
-                elif self.config['costFunc'] == 'BCEWithLogitsLoss':
-                    targets = targets.long().to(self.device)  # CE
-
-                self.optimizer.zero_grad()
-                outputs = self.model(inputs) / T
-                loss = self.criterion(outputs, targets)
-
-                if str(self.basicConfig['aggregate_mode']).__contains__('fisher'):
-                    if self.aggregated_fisher is not None:
-                        fisher_loss = 0
-                        for n, p in self.model.named_parameters():
-                            if n in self.aggregated_fisher:
-                                fisher_loss += (self.aggregated_fisher[n] * (p - old_means[n]) ** 2).sum()
-
-                        loss += (self.clientProfile['clientMetadata']['fisher_reg'] / 2) * fisher_loss
-                    else:
-                        print('aggregated fisher not exists, skipping fisher calc')
-
-                loss.backward()
-
-                if self.config['costFunc'] == 'CEloss':
-                    pass
-                elif self.config['costFunc'] == 'BCEloss':
-                    torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=self.config['normClip'])
-                elif self.config['costFunc'] == 'BCEWithLogitsLoss':
-                    pass
-
-                if self.basicConfig['aggregate_mode'] == 'fedCurv_fisher_server':
-                    torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=self.config['normClip'])
-
-                self.optimizer.step()
-                running_loss += loss.item()
-
-                # Intended delay -> to simulate device latency
-                if self.basicConfig['spec_diverse']:
-                    delayMin = round(self.clientProfile['clientMetadata']['delayMin'], 3)
-                    delayMax = round(self.clientProfile['clientMetadata']['delayMax'], 3)
-                    randTime = random.uniform(delayMin, delayMax)
-                    time.sleep(randTime)
-
-                all_targets.extend(targets.detach().cpu().numpy())
-                all_outputs.extend(outputs.detach().cpu().numpy())
-
-            avg_loss = running_loss / len(self.train_loader)
-            key_loss = f"client/performance/train/loss/client{self.client_internalId} training loss"
-            # key_acc = f"client/performance/train/accuracy/client{self.client_internalId} training accuracy"
-
-            logList = [key_loss, avg_loss, self.round]
-            # self.wandbQueue.put(logList)
-
-            # self.wandbClient.sendLog(key=f"client{self.client_internalId} training loss", data=avg_loss)
-            # print(f"Client {self.client_internalId} Epoch [{epoch + 1}/{epochs}][, Loss: {avg_loss:.4f}")
-        # ##### ##############################
-
-        # fisher 정보 계산 ####
-        if self.basicConfig['aggregate_mode'] == 'fedCurv_fisher_client':
-            fisher = compute_fisher(self.model, self.train_loader, self.config['costFunc'], self.device)
-            save_fisher(fisher, self.clientFisherPath)
-        # ############## ####
-
-        # scale by 1 / T before sending it to server -> to adjust norm difference with different clients
-        if T != 1:
-            with torch.no_grad():
-                for param in self.model.parameters():
-                    param.mul_(1.0 / T)
-
-        return logList
+    def train(self, epochs=10):
+        pass
 
     def validate(self, mode):
         self.model.eval()
@@ -424,6 +320,7 @@ class Client(Process):
 
         """ ---- [OPEN] INITIAL TRAINING """
         trainStartTime = time.time_ns()
+        self.logs_before_train()
         logList = self.train(epochs=self.clientProfile['clientMetadata']['epoch'])
 
         file_list = os.listdir(self.basicConfig['receivedPthPath'])

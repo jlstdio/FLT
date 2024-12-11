@@ -3,7 +3,7 @@ import multiprocessing
 import random
 from multiprocessing import Process
 import numpy as np
-from client.client import Client
+from client.client_type.client import Client
 import time
 import torch
 

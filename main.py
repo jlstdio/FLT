@@ -6,7 +6,6 @@ import time
 from random import shuffle
 import random
 import numpy as np
-from client.client import Client
 from dataPrepare.iid import iidSplit
 from dataPrepare.noniid import *
 from dataPrepare.partiallyNonIid import custom_split_non_iid, difference_bias_by_type
