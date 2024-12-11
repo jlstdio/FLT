@@ -181,17 +181,18 @@ if __name__ == "__main__":
     runner(network_configPath, data_configPath)
     '''
 
-    networkConfig_PathList = [f'{networkConfigRoot}/fedAvg/config_fedAvg_1.json',
-                              f'{networkConfigRoot}/fedAvg/config_fedAvg_2.json',
-                              f'{networkConfigRoot}/fedAvg/config_fedAvg_3.json',
-                              f'{networkConfigRoot}/fedAvg/config_fedAvg_4.json',
-                              f'{networkConfigRoot}/calm_fisher/config_calm_fisher_0_1.json',
-                              f'{networkConfigRoot}/calm_fisher/config_calm_fisher_0_2.json',
-                              f'{networkConfigRoot}/calm_fisher/config_calm_fisher_0_3.json',
-                              f'{networkConfigRoot}/calm_fisher/config_calm_fisher_0_4.json',
-                              f'{networkConfigRoot}/calm_fisher/config_calm_fisher_1_1.json']
+    networkConfig_PathList = [f'{networkConfigRoot}/calm_fisher/config_calm_fisher_1_2.json',
+                              f'{networkConfigRoot}/calm_fisher/config_calm_fisher_1_3.json',
+                              f'{networkConfigRoot}/calm_fisher/config_calm_fisher_1_4.json',
+                              f'{networkConfigRoot}/calm_fisher/config_calm_fisher_2_0.json',
+                              f'{networkConfigRoot}/calm_fisher/config_calm_fisher_2_1.json',
+                              f'{networkConfigRoot}/calm_fisher/config_calm_fisher_2_2.json',
+                              f'{networkConfigRoot}/calm_fisher/config_calm_fisher_2_3.json',
+                              f'{networkConfigRoot}/calm_fisher/config_calm_fisher_2_4.json',
+                              f'{networkConfigRoot}/calm_fisher/config_calm_fisher_3_0.json']
 
     dataConfig_PathList = [f'{dataConfigRoot}/dataConfig_dirichlet.json',
+                           f'{dataConfigRoot}/dataConfig_dirichlet.json',
                            f'{dataConfigRoot}/dataConfig_dirichlet.json',
                            f'{dataConfigRoot}/dataConfig_dirichlet.json',
                            f'{dataConfigRoot}/dataConfig_dirichlet.json',

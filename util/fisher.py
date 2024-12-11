@@ -1,31 +1,49 @@
 import json
 import torch
+from torch import nn
 
 
 # Load Fisher information from a JSON file
-def load_fisher_from_json(file_path):
-    with open(file_path, 'r') as f:
-        fisher_json = json.load(f)
-    fisher = {name: torch.tensor(param) for name, param in fisher_json.items()}
+def load_fisher(file_path, device):
+    fisher = torch.load(file_path, map_location=device, weights_only=True)
     return fisher
 
 
-# Save Fisher information to a JSON file
-def save_fisher_to_json(fisher, file_path):
-    fisher_json = {name: param.tolist() for name, param in fisher.items()}
-    with open(file_path, 'w') as f:
-        json.dump(fisher_json, f)
+# Save Fisher information to a file
+def save_fisher(fisher, file_path):
+    torch.save(fisher, file_path)
+
+
+def visualize_fisher(fisher, file_path):
+    pass
 
 
 # Compute Fisher information for a client
-def compute_fisher(model, dataloader, criterion):
-    fisher = {name: torch.zeros_like(param) for name, param in model.named_parameters()}
+def compute_fisher(model, dataloader, costFunc, device):
+    fisher = {name: torch.zeros_like(param, device=device) for name, param in model.named_parameters()}
+    model.to(device)
     model.eval()
 
-    for data, labels in dataloader:
-        data, labels = data.to('cpu'), labels.to('cpu')
-        outputs = model(data)
-        loss = criterion(outputs, labels)
+    if costFunc == 'CEloss':
+        criterion = nn.CrossEntropyLoss()
+    elif costFunc == 'BCEloss':
+        criterion = nn.BCELoss()
+    elif costFunc == 'BCEWithLogitsLoss':
+        criterion = nn.BCEWithLogitsLoss()
+
+    for inputs, targets in dataloader:
+        inputs = inputs.to(device)
+
+        if costFunc == 'CEloss':
+            targets = targets.long().to(device)  # CE
+        elif costFunc == 'BCEloss':
+            targets = targets.to(device)  # BCE
+        elif costFunc == 'BCEWithLogitsLoss':
+            targets = targets.long().to(device)  # CE
+
+        model.zero_grad()
+        outputs = model(inputs)
+        loss = criterion(outputs, targets)
         loss.backward()
 
         for name, param in model.named_parameters():
@@ -34,4 +52,46 @@ def compute_fisher(model, dataloader, criterion):
 
     # Average Fisher information across batches
     fisher = {name: value / len(dataloader) for name, value in fisher.items()}
+    return fisher
+
+
+def compute_selective_fisher(model, dataloader, costFunc, device, significant_params):
+    fisher = {name: torch.zeros_like(param, device=device) for name, param in model.named_parameters()}
+    model.to(device)
+    model.eval()
+
+    if costFunc == 'CEloss':
+        criterion = nn.CrossEntropyLoss()
+    elif costFunc == 'BCEloss':
+        criterion = nn.BCELoss()
+    elif costFunc == 'BCEWithLogitsLoss':
+        criterion = nn.BCEWithLogitsLoss()
+
+    for inputs, targets in dataloader:
+        inputs = inputs.to(device)
+
+        if costFunc == 'CEloss':
+            targets = targets.long().to(device)  # CE
+        elif costFunc == 'BCEloss':
+            targets = targets.to(device)  # BCE
+        elif costFunc == 'BCEWithLogitsLoss':
+            targets = targets.long().to(device)  # CE
+
+        model.zero_grad()
+        outputs = model(inputs)
+        loss = criterion(outputs, targets)
+        loss.backward()
+
+        for name, param in model.named_parameters():
+            if param.grad is not None:
+                fisher[name] += param.grad.pow(2)
+
+        for name, param in model.named_parameters():
+            if param.grad is not None:
+                fisher[name] += param.grad.pow(2)
+
+    # Average Fisher information across batches
+    fisher = {name: value / len(dataloader) for name, value in fisher.items()}
+    fisher = {n: fisher[n] for n in fisher if significant_params[n].sum() > 0}
+
     return fisher

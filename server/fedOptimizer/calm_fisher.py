@@ -23,7 +23,8 @@ def average_weights(weights: List[Dict[str, torch.Tensor]]) -> Dict[str, torch.T
 
     return new_state_dict
 
-class fedCurv_fisher_calc_server(fedOptParent):
+
+class calm_fisher(fedOptParent):
     def __init__(self, rootModel, cudaId, additionalInfo):
         super().__init__(rootModel, cudaId, additionalInfo)
 
@@ -36,10 +37,13 @@ class fedCurv_fisher_calc_server(fedOptParent):
         costFunc = self.additionalInfo['costFunc']
         dataset = self.additionalInfo['dataset']
         numClass = self.additionalInfo['numClass']
+        curRound = self.additionalInfo['curRound']
+        fisher_patient = self.additionalInfo['fisher_patient']
 
-        data_loader = loadData(dataset, costFunc, numClass)
-
-        fisher = compute_fisher(self.resultRootModel, data_loader, costFunc, self.device)
+        fisher = None
+        if curRound % fisher_patient == 0 and curRound != 0:
+            data_loader = loadData(dataset, costFunc, numClass)
+            fisher = compute_fisher(self.resultRootModel, data_loader, costFunc, self.device)
 
         return self.resultRootModel, fisher
 

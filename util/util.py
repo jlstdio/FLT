@@ -1,8 +1,9 @@
 import os.path
-
 import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
-
+import torch
+from torch.utils.data import DataLoader, TensorDataset
 
 def showDistribution(clientsDict, classes, name):
     num_clients = len(clientsDict)
@@ -47,55 +48,57 @@ def showDistribution(clientsDict, classes, name):
 
 
 def scoring(round_num, scorePath, fileName, all_targets, all_outputs, acc, loss):
-    # 키 설정
+    # Key settings
     target_key = f'target_{round_num}'
     output_key = f'output_{round_num}'
     scoreFilePath = os.path.join(scorePath, fileName)
     prefFilePath = os.path.join(scorePath, f'pref_{fileName}')
 
-    # 디렉토리 생성
+    # Create directory if it doesn't exist
     os.makedirs(scorePath, exist_ok=True)
 
-    # 점수 파일 처리
+    # Process score file
     if os.path.isfile(scoreFilePath):
-        # 파일이 있으면 읽어오기
+        # If file exists, read it
         score_df = pd.read_csv(scoreFilePath)
     else:
-        # 파일이 없으면 빈 DataFrame 생성
+        # If file doesn't exist, create an empty DataFrame
         score_df = pd.DataFrame()
 
-    # 새로운 데이터 생성
+    # Create new data
     new_data = pd.DataFrame({
         target_key: all_targets,
         output_key: all_outputs
     })
 
-    # 기존 데이터프레임과 새로운 데이터프레임의 길이 조정
+    # Adjust lengths of DataFrames
     max_len = max(len(score_df), len(new_data))
     score_df = score_df.reindex(range(max_len))
     new_data = new_data.reindex(range(max_len))
 
-    # 데이터프레임 병합
+    # Merge DataFrames
     score_df = pd.concat([score_df, new_data], axis=1)
 
-    # 저장
+    # Save the updated score DataFrame
     score_df.to_csv(scoreFilePath, index=False)
 
-    # 성능(pref) 파일 처리
+    # Process performance (pref) file
     if os.path.isfile(prefFilePath):
         pref_df = pd.read_csv(prefFilePath)
     else:
         pref_df = pd.DataFrame()
 
-    # 새로운 행 추가
+    # New data to append
     new_pref_data = {
         'round': round_num,
         'acc': acc,
         'loss': loss
     }
-    pref_df = pref_df.append(new_pref_data, ignore_index=True)
 
-    # 저장
+    # Use pd.concat instead of append
+    pref_df = pd.concat([pref_df, pd.DataFrame([new_pref_data])], ignore_index=True)
+
+    # Save the updated performance DataFrame
     pref_df.to_csv(prefFilePath, index=False)
 
 # state_dict에서 'module.' 제거하는 함수
@@ -141,3 +144,32 @@ def clientTypeDistribution(clientTypeData, numClients):
     return result
 
 # print(clientTypeDistribution(['0:1.0'], 100))
+
+
+def loadData(dataset, costFunc, numClass, batchSize=32):
+    validation_y, validation_x = zip(*dataset)
+
+    validation_x = np.array(validation_x)
+    validation_y = np.array(validation_y)
+
+    if costFunc == 'CEloss':
+        pass
+    elif costFunc == 'BCEloss':
+        validation_y = np.eye(numClass)[validation_y]  # BCE
+    elif costFunc == 'BCEWithLogitsLoss':
+        pass
+
+    X_validation = torch.tensor(validation_x, dtype=torch.float32).permute(0, 3, 1, 2)
+    y_validation = torch.tensor(validation_y, dtype=torch.long)
+
+    if costFunc == 'CEloss':
+        pass
+    elif costFunc == 'BCEloss':
+        y_validation = torch.tensor(validation_y, dtype=torch.float32)
+    elif costFunc == 'BCEWithLogitsLoss':
+        pass
+
+    validation_dataset = TensorDataset(X_validation, y_validation)
+    val_loader = DataLoader(validation_dataset, batch_size=batchSize, shuffle=False)
+
+    return val_loader
