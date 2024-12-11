@@ -2,7 +2,7 @@
 def sequential_pick_clients(initial_data):
     pair_size = initial_data['pair_size']
     total_clients = initial_data['total_clients']
-    curRound = initial_data['curRound']
+    curRound = initial_data['curRound'] + initial_data['initial_idx']
     set_length = int(total_clients / pair_size)
 
     # round          | 1  2  3  4  5  6  7  8  9  10 ...

@@ -16,45 +16,9 @@ import numpy as np
 import os
 import seaborn as sns
 from torch.optim.lr_scheduler import CosineAnnealingLR
+from util.fisher import compute_fisher, save_fisher, load_fisher
 from util.param_visualization import param_visualization
 from util.util import scoring
-
-
-# 히트맵 그리기 함수 (위에서 정의한 것을 포함)
-def plot_heatmap_multi_channel(data, title, save_path, max_channels=16):
-    if data.ndim == 4:
-        data = data[:, 0, :, :]
-    elif data.ndim == 3:
-        pass
-    elif data.ndim == 2:
-        plt.figure(figsize=(10, 8))
-        sns.heatmap(data, cmap='viridis')
-        plt.title(title)
-        plt.savefig(save_path)
-        plt.close()
-        return
-    else:
-        print(f"Unsupported data shape: {data.shape}")
-        return
-
-    num_channels = data.shape[0]
-    num_plots = min(num_channels, max_channels)
-
-    cols = min(4, num_plots)
-    rows = math.ceil(num_plots / cols)
-
-    plt.figure(figsize=(4 * cols, 4 * rows))
-
-    for i in range(num_plots):
-        plt.subplot(rows, cols, i + 1)
-        sns.heatmap(data[i], cmap='viridis', cbar=False)
-        plt.title(f'Channel {i}')
-        plt.axis('off')
-
-    plt.suptitle(title, fontsize=16)
-    plt.tight_layout(rect=[0, 0.03, 1, 0.95])
-    plt.savefig(save_path)
-    plt.close()
 
 
 class Client(Process):
@@ -87,17 +51,31 @@ class Client(Process):
         self.sessionId = sessionId
         self.turnFlag = turnFlag
         self.client_internalId = client_internalId
-        self.modelReserved = model
+        self.modelReserved = copy.deepcopy(model)
         self.round = 0
         self.wandbQueue = wandbQueue
         self.serverRound = serverRound
         self.finishRate = 0.0
         self.clientType = int(clientType)
         self.max_retries = 10
+        self.aggregated_fisher = None
+
+        os.makedirs(self.basicConfig['clientsMetadataFolderPath'], exist_ok=True)
+        os.makedirs(self.basicConfig['receivedDataPath'], exist_ok=True)
+        os.makedirs(self.basicConfig['receivedProfilePath'], exist_ok=True)
 
         self.metadataPath = self.basicConfig['clientsMetadataFolderPath'] + f"/client_{self.client_internalId}.json"
         self.trainDataPath = self.basicConfig['receivedDataPath'] + f"/client_{self.client_internalId}_trainData.json"
         self.profileDataPath = self.basicConfig['receivedProfilePath'] + f'/client_{self.client_internalId}_profile.json'
+
+        if str(self.basicConfig['aggregate_mode']).__contains__('fisher'):
+
+            testName = basicConfig['testName']
+            self.aggregatedFisherPath = self.basicConfig['aggregateFisherPath'] + f'/rootFisher-{testName}.pth'
+
+            if self.basicConfig['aggregate_mode'] == 'fedCurv_fisher_client':
+                self.clientFisherPath = self.basicConfig['aggregateFisherPath'] + f'/client_{self.client_internalId}_fisher.pth'
+
         self.clientProfile = None
         self.scorePath = scorePath + f'/{self.client_internalId}'
         self.heatmap_dir = os.path.join(self.scorePath, "client_heatmaps", f"client_{client_internalId}")
@@ -121,19 +99,6 @@ class Client(Process):
         '''
 
         print(f"Client {client_internalId} online")
-
-    def plot_parameter_diffs(self, initial_params, final_params):
-        """
-        파라미터 차이를 계산하고 히트맵으로 시각화합니다.
-        """
-        for name in initial_params:
-            if name in final_params:
-                param_diff = final_params[name] - initial_params[name]
-                # 히트맵 시각화
-                if param_diff.ndim >= 2:
-                    title = f"Parameter Difference: {name}"
-                    save_path = os.path.join(self.heatmap_dir, f"round{self.serverRound.value}_parameter_diff_{name}.png")
-                    plot_heatmap_multi_channel(param_diff, title, save_path)
 
     def loadData(self):
         try:
@@ -181,48 +146,7 @@ class Client(Process):
         except Exception as e:
             print(f'client{self.client_internalId} - {e}')
 
-
     def train(self, epochs=10):
-
-        # 활성화 맵 캡처를 위한 hook 등록
-        activation_maps_before = {}
-        activation_maps_after = {}
-
-        def get_activation_before(name):
-            def hook(model, input, output):
-                activation_maps_before[name] = output.detach().cpu().numpy()
-
-            return hook
-
-        def get_activation_after(name):
-            def hook(model, input, output):
-                activation_maps_after[name] = output.detach().cpu().numpy()
-
-            return hook
-
-        # 원하는 레이어에 hook 등록 (예: 모든 Conv2d 레이어)
-        hooks_before = []
-        hooks_after = []
-        for name, layer in self.model.named_modules():
-            if isinstance(layer, nn.Conv2d):
-                hooks_before.append(layer.register_forward_hook(get_activation_before(name)))
-                hooks_after.append(layer.register_forward_hook(get_activation_after(name)))
-
-        # 디렉토리 생성
-        os.makedirs(self.heatmap_dir, exist_ok=True)
-
-        # 학습 전 활성화 맵 저장 (예: 한 배치 데이터로)
-        self.model.eval()
-        with torch.no_grad():
-            for inputs, _ in self.train_loader:
-                inputs = inputs.to(self.device)
-                self.model(inputs)
-                break  # 첫 번째 배치만 사용
-        self.model.train()
-
-        # 학습 전 파라미터 저장
-        initial_params = {name: param.clone().detach().cpu().numpy() for name, param in self.model.named_parameters()}
-
         lr_origin = self.clientProfile['clientMetadata']['lr']
         T = self.clientProfile['clientMetadata']['T']
         lr = lr_origin / T
@@ -247,10 +171,18 @@ class Client(Process):
         all_targets = []
         all_outputs = []
 
+        old_means = {}
+        if str(self.basicConfig['aggregate_mode']).__contains__('fisher'):
+            model_for_fisher = copy.deepcopy(self.modelReserved).to(self.device)
+            old_params = {n: p for n, p in model_for_fisher.named_parameters() if p.requires_grad}
+            for n, p in old_params.items():
+                old_means[n] = p.clone().detach()
+
         # Train ##############################
         self.model.train()
         for epoch in range(epochs):
             running_loss = 0.0
+
             for inputs, targets in self.train_loader:
                 inputs = inputs.to(self.device)
                 if self.config['costFunc'] == 'CEloss':
@@ -259,10 +191,22 @@ class Client(Process):
                     targets = targets.to(self.device)  # BCE
                 elif self.config['costFunc'] == 'BCEWithLogitsLoss':
                     targets = targets.long().to(self.device)  # CE
-                outputs = self.model(inputs) / T
 
-                loss = self.criterion(outputs, targets)
                 self.optimizer.zero_grad()
+                outputs = self.model(inputs) / T
+                loss = self.criterion(outputs, targets)
+
+                if str(self.basicConfig['aggregate_mode']).__contains__('fisher'):
+                    if self.aggregated_fisher is not None:
+                        fisher_loss = 0
+                        for n, p in self.model.named_parameters():
+                            if n in self.aggregated_fisher:
+                                fisher_loss += (self.aggregated_fisher[n] * (p - old_means[n]) ** 2).sum()
+
+                        loss += (self.clientProfile['clientMetadata']['fisher_reg'] / 2) * fisher_loss
+                    else:
+                        print('aggregated fisher not exists, skipping fisher calc')
+
                 loss.backward()
 
                 if self.config['costFunc'] == 'CEloss':
@@ -271,6 +215,9 @@ class Client(Process):
                     torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=self.config['normClip'])
                 elif self.config['costFunc'] == 'BCEWithLogitsLoss':
                     pass
+
+                if self.basicConfig['aggregate_mode'] == 'fedCurv_fisher_server':
+                    torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=self.config['normClip'])
 
                 self.optimizer.step()
                 running_loss += loss.item()
@@ -296,24 +243,11 @@ class Client(Process):
             # print(f"Client {self.client_internalId} Epoch [{epoch + 1}/{epochs}][, Loss: {avg_loss:.4f}")
         # ##### ##############################
 
-        # 학습 후 파라미터 저장
-        final_params = {name: param.clone().detach().cpu().numpy() for name, param in self.model.named_parameters()}
-
-        # 학습 후 활성화 맵 캡처 (예: 한 배치 데이터로)
-        self.model.eval()
-        with torch.no_grad():
-            for inputs, _ in self.train_loader:
-                inputs = inputs.to(self.device)
-                self.model(inputs)
-                break  # 첫 번째 배치만 사용
-        self.model.train()
-
-        # hook 제거
-        for hook in hooks_before + hooks_after:
-            hook.remove()
-
-        # 파라미터 변화 시각화
-        self.plot_parameter_diffs(initial_params, final_params)
+        # fisher 정보 계산 ####
+        if self.basicConfig['aggregate_mode'] == 'fedCurv_fisher_client':
+            fisher = compute_fisher(self.model, self.train_loader, self.config['costFunc'], self.device)
+            save_fisher(fisher, self.clientFisherPath)
+        # ############## ####
 
         # scale by 1 / T before sending it to server -> to adjust norm difference with different clients
         if T != 1:
@@ -409,6 +343,7 @@ class Client(Process):
             default_metadata["clientMetadata"]["epoch"] = self.config['epoch']
             default_metadata["clientMetadata"]["batchSize"] = self.config['batchSize']
             default_metadata["clientMetadata"]["dataSize"] = self.config['trainDataSize']
+            default_metadata["clientMetadata"]["fisher_reg"] = 0.0
 
             default_metadata["performance"]["lastTrainTime"] = 0.0
             default_metadata["performance"]["avgTrainTime"] = 0.0
@@ -447,6 +382,7 @@ class Client(Process):
                 default_metadata["clientMetadata"]["epoch"] = negotiatedFile['clientMetadata']['epoch']
                 default_metadata["clientMetadata"]["batchSize"] = negotiatedFile['clientMetadata']['batchSize']
                 default_metadata["clientMetadata"]["dataSize"] = negotiatedFile['clientMetadata']['dataSize']
+                default_metadata["clientMetadata"]["fisher_reg"] = negotiatedFile['clientMetadata']['fisher_reg']
 
             # update negotiated configuration (hyperparameter)
             os.remove(rxPath)
@@ -463,9 +399,15 @@ class Client(Process):
         rootModelPath = self.basicConfig['rootModelFilePath']
         testName = self.basicConfig['testName']
         rootModelPath = f'{rootModelPath}/rootModel-{testName}.pth'
-        model_state_dict = torch.load(rootModelPath, map_location=self.device)
+        model_state_dict = torch.load(rootModelPath, map_location=self.device, weights_only=True)
         self.model.load_state_dict(model_state_dict)
         self.model = self.model.to(self.device)
+
+        """ [OPEN] FISHER 정보 가져오기 """
+        if str(self.basicConfig['aggregate_mode']).__contains__('fisher'):
+            if os.path.exists(self.aggregatedFisherPath):
+                self.aggregated_fisher = load_fisher(self.aggregatedFisherPath, self.device)
+        """ [CLOSE] FISHER 정보 가져오기 """
 
         """ ---- [OPEN] GLOBAL MODEL VALIDATION BEFORE TRAIN """
         valid_acc_before_train, valid_loss_before_train = self.validate('pre-test')
