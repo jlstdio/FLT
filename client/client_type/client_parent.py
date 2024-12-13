@@ -239,7 +239,7 @@ class client_parent(Process):
             default_metadata["clientMetadata"]["epoch"] = self.config['epoch']
             default_metadata["clientMetadata"]["batchSize"] = self.config['batchSize']
             default_metadata["clientMetadata"]["dataSize"] = self.config['trainDataSize']
-            default_metadata["clientMetadata"]["fisher_reg"] = 0.0
+            default_metadata["clientMetadata"]["penalty_lambda"] = 0.0
 
             default_metadata["performance"]["lastTrainTime"] = 0.0
             default_metadata["performance"]["avgTrainTime"] = 0.0
@@ -278,7 +278,7 @@ class client_parent(Process):
                 default_metadata["clientMetadata"]["epoch"] = negotiatedFile['clientMetadata']['epoch']
                 default_metadata["clientMetadata"]["batchSize"] = negotiatedFile['clientMetadata']['batchSize']
                 default_metadata["clientMetadata"]["dataSize"] = negotiatedFile['clientMetadata']['dataSize']
-                default_metadata["clientMetadata"]["fisher_reg"] = negotiatedFile['clientMetadata']['fisher_reg']
+                default_metadata["clientMetadata"]["penalty_lambda"] = negotiatedFile['clientMetadata']['penalty_lambda']
 
             # update negotiated configuration (hyperparameter)
             os.remove(rxPath)

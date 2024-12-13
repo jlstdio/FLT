@@ -379,14 +379,14 @@ class Server(Process):
 
                     clientProfile['clientMetadata']['lr'] *= 1.0
 
-                    if self.serverConfig['fisher_reg'] > 0:
-                        clientProfile['clientMetadata']['fisher_reg'] = self.serverConfig['fisher_reg']
+                    if self.serverConfig['penalty_lambda'] > 0:
+                        clientProfile['clientMetadata']['penalty_lambda'] = self.serverConfig['penalty_lambda']
 
-                    if self.serverConfig['fisher_reg'] > 0 and self.serverConfig['fisher_decay'] > 0:
+                    if self.serverConfig['penalty_lambda'] > 0 and self.serverConfig['fisher_decay'] > 0:
                         if self.currentRound.value % self.serverConfig['fisher_patient'] == 0:
-                            clientProfile['clientMetadata']['fisher_reg'] = self.serverConfig['fisher_reg']
+                            clientProfile['clientMetadata']['penalty_lambda'] = self.serverConfig['penalty_lambda']
                         else:
-                            clientProfile['clientMetadata']['fisher_reg'] *= self.serverConfig['fisher_decay']
+                            clientProfile['clientMetadata']['penalty_lambda'] *= self.serverConfig['fisher_decay']
 
                 negotiatePath = self.basicConfig['clientsNegotiationFolderPath'] + f'/{clientId}_negotiation.json'
                 os.makedirs(self.basicConfig['clientsNegotiationFolderPath'], exist_ok=True)
