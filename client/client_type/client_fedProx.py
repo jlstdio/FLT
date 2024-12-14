@@ -42,7 +42,7 @@ class client_fedProx(client_parent):
         self.optimizer = optim.SGD(self.model.parameters(), lr=lr)
 
         # root model for proximal term
-        prox_model = copy.deepcopy(self.modelReserved)
+        prox_model = copy.deepcopy(self.modelReserved).to(self.device)
 
         all_targets = []
         all_outputs = []
