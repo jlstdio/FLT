@@ -180,9 +180,17 @@ if __name__ == "__main__":
     runner(network_configPath, data_configPath)
     '''
 
-    networkConfig_PathList = [f'{networkConfigRoot}/fed_prox/config_fed_prox.json']
+    networkConfig_PathList = [f'{networkConfigRoot}/fed_prox/config_fed_prox_0_0.json',
+                              f'{networkConfigRoot}/fed_prox/config_fed_prox_0_1.json',
+                              f'{networkConfigRoot}/fed_prox/config_fed_prox_0_2.json',
+                              f'{networkConfigRoot}/fed_prox/config_fed_prox_0_3.json',
+                              f'{networkConfigRoot}/fed_prox/config_fed_prox_0_4.json']
 
-    dataConfig_PathList = [f'{dataConfigRoot}/dataConfig_dirichlet.json']
+    dataConfig_PathList = [f'{dataConfigRoot}/dataConfig_dirichlet.json',
+                           f'{dataConfigRoot}/dataConfig_dirichlet.json',
+                           f'{dataConfigRoot}/dataConfig_dirichlet.json',
+                           f'{dataConfigRoot}/dataConfig_dirichlet.json',
+                           f'{dataConfigRoot}/dataConfig_dirichlet.json']
 
     for network_configPath, data_configPath in zip(networkConfig_PathList, dataConfig_PathList):
         print(f'running with {network_configPath} | {data_configPath}')
