@@ -16,6 +16,8 @@ import numpy as np
 import os
 import seaborn as sns
 from torch.optim.lr_scheduler import CosineAnnealingLR
+
+from client.util_client import target_type_convert, criterion_select
 from util.fisher import compute_fisher, save_fisher, load_fisher
 from util.param_visualization import param_visualization
 from util.util import scoring
@@ -81,22 +83,7 @@ class Client(Process):
         self.heatmap_dir = os.path.join(self.scorePath, "client_heatmaps", f"client_{client_internalId}")
         os.makedirs(self.heatmap_dir, exist_ok=True)
 
-        '''
-        # Wrap the model with DataParallel
-        if torch.cuda.device_count() > 1:
-            self.model = nn.DataParallel(self.model)
-        '''
-        if self.config['costFunc'] == 'CEloss':
-            self.criterion = nn.CrossEntropyLoss()
-        elif self.config['costFunc'] == 'BCEloss':
-            self.criterion = nn.BCELoss()
-        elif self.config['costFunc'] == 'BCEWithLogitsLoss':
-            self.criterion = nn.BCEWithLogitsLoss()
-        '''
-        if is_available():
-            set_per_process_memory_fraction(self.config['memFrac'], self.device.index)
-            torch.backends.cudnn.benchmark = True
-        '''
+        self.criterion = criterion_select(self.config['costFunc'])
 
         print(f"Client {client_internalId} online")
 
@@ -185,12 +172,8 @@ class Client(Process):
 
             for inputs, targets in self.train_loader:
                 inputs = inputs.to(self.device)
-                if self.config['costFunc'] == 'CEloss':
-                    targets = targets.long().to(self.device)  # CE
-                elif self.config['costFunc'] == 'BCEloss':
-                    targets = targets.to(self.device)  # BCE
-                elif self.config['costFunc'] == 'BCEWithLogitsLoss':
-                    targets = targets.long().to(self.device)  # CE
+                targets = target_type_convert(self.config['costFunc'], targets)
+                targets = targets.to(self.device)
 
                 self.optimizer.zero_grad()
                 outputs = self.model(inputs) / T

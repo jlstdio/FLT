@@ -3,10 +3,11 @@ import multiprocessing
 import random
 from multiprocessing import Process
 import numpy as np
-from client.client import Client
+from client.client_type.client import Client
 import time
 import torch
 
+from network.client_type_loader import client_type_loader
 from util.util import clientTypeDistribution
 
 
@@ -68,21 +69,19 @@ class FLNetwork(Process):
 
     def wakeUpClients(self):
         print('waking up clients')
-        clients = []
-        for i in self.pickedClientsList:
-            clients.append(Client(client_internalId=i,
-                                  dataset=self.clientsDatasetDict[i],
-                                  networkConfig=self.networkConfig,
-                                  basicConfig=self.basicConfig,
-                                  clientType=self.typesPerClients[i],
-                                  config=self.clientConfig[int(self.typesPerClients[i])],
-                                  model=copy.deepcopy(self.modelToLoad),
-                                  serverRound=self.serverRound,
-                                  flipboard=self.flipboard,
-                                  turnFlag=self.turnFlag,
-                                  sessionId=self.sessionId,
-                                  scorePath=self.scorePath,
-                                  wandbQueue=self.wandbQueue))
+        clients = client_type_loader(self.pickedClientsList,
+                                     self.clientsDatasetDict,
+                                     self.networkConfig,
+                                     self.basicConfig,
+                                     self.typesPerClients,
+                                     self.clientConfig,
+                                     self.modelToLoad,
+                                     self.serverRound,
+                                     self.flipboard,
+                                     self.turnFlag,
+                                     self.sessionId,
+                                     self.scorePath,
+                                     self.wandbQueue)
 
         # Start all clients
         for client in clients:

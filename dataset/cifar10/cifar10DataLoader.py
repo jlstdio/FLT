@@ -1,9 +1,15 @@
 import numpy as np
 import pickle
 import os
+import urllib.request
+import tarfile
+import shutil
 
 
 class cifar10Dataloader(object):
+    CIFAR10_URL = 'https://www.cs.toronto.edu/~kriz/cifar-10-python.tar.gz'
+    ARCHIVE_NAME = 'cifar-10-python.tar.gz'
+
     def __init__(self, data_dir, normalize=True):
         """
         CIFAR-10 데이터 로더 초기화.
@@ -18,6 +24,83 @@ class cifar10Dataloader(object):
         self.normalize = normalize
         self.mean = None
         self.std = None
+
+        # Ensure the data directory exists
+        if not os.path.isdir(self.data_dir):
+            os.makedirs(self.data_dir)
+            print(f"Created directory {self.data_dir}")
+
+        # Check if all required files are present; if not, download and extract
+        if not self._check_files_exist():
+            print("Required CIFAR-10 files not found. Downloading dataset...")
+            self._download_and_extract()
+            print("Download and extraction complete.")
+        else:
+            print("All CIFAR-10 files are present.")
+
+    def _check_files_exist(self):
+        """
+        Check if all required CIFAR-10 batch files exist in the data directory.
+
+        Returns:
+            bool: True if all files exist, False otherwise.
+        """
+        for batch_file in self.batch_files + [self.test_file]:
+            file_path = os.path.join(self.data_dir, batch_file)
+            if not os.path.isfile(file_path):
+                print(f"Missing file: {file_path}")
+                return False
+        return True
+
+    def _download_and_extract(self):
+        """
+        Download the CIFAR-10 dataset and extract it into the data directory.
+        """
+        archive_path = os.path.join(self.data_dir, self.ARCHIVE_NAME)
+
+        # Download the dataset
+        print(f"Downloading CIFAR-10 dataset from {self.CIFAR10_URL}...")
+        try:
+            urllib.request.urlretrieve(self.CIFAR10_URL, archive_path, self._download_progress)
+            print("\nDownload finished.")
+        except Exception as e:
+            raise RuntimeError(f"Failed to download CIFAR-10 dataset: {e}")
+
+        # Extract the archive
+        print("Extracting the dataset...")
+        try:
+            with tarfile.open(archive_path, 'r:gz') as tar:
+                tar.extractall(path=self.data_dir)
+            print("Extraction complete.")
+        except Exception as e:
+            raise RuntimeError(f"Failed to extract CIFAR-10 dataset: {e}")
+        finally:
+            # Optionally, remove the archive to save space
+            if os.path.exists(archive_path):
+                os.remove(archive_path)
+                print(f"Removed archive {archive_path}")
+
+            # Move extracted files to data_dir if they are in a subdirectory
+            extracted_dir = os.path.join(self.data_dir, 'cifar-10-batches-py')
+            if os.path.isdir(extracted_dir):
+                for filename in os.listdir(extracted_dir):
+                    shutil.move(os.path.join(extracted_dir, filename), self.data_dir)
+                os.rmdir(extracted_dir)
+                print(f"Moved files from {extracted_dir} to {self.data_dir}")
+
+    def _download_progress(self, block_num, block_size, total_size):
+        """
+        Display download progress.
+
+        Args:
+            block_num (int): Number of blocks transferred so far.
+            block_size (int): Block size in bytes.
+            total_size (int): Total size of the file.
+        """
+        downloaded = block_num * block_size
+        percent = downloaded / total_size * 100
+        percent = min(100, percent)
+        print(f"\rDownload progress: {percent:.2f}%", end='')
 
     def read_batch(self, file):
         with open(os.path.join(self.data_dir, file), 'rb') as f:

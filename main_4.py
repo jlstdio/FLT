@@ -180,11 +180,11 @@ if __name__ == "__main__":
     runner(network_configPath, data_configPath)
     '''
 
-    networkConfig_PathList = [f'{networkConfigRoot}/fed_prox/config_fed_prox_0_3.json',
-                              f'{networkConfigRoot}/fed_prox/config_fed_prox_0_4.json',
-                              f'{networkConfigRoot}/fedAvg/config_fedAvg_2.json',
-                              f'{networkConfigRoot}/fedAvg/config_fedAvg_3.json',
-                              f'{networkConfigRoot}/fedAvg/config_fedAvg_4.json']
+    networkConfig_PathList = [f'{networkConfigRoot}/fed_prox/config_fed_prox_2_0.json',
+                              f'{networkConfigRoot}/fed_prox/config_fed_prox_2_1.json',
+                              f'{networkConfigRoot}/fed_prox/config_fed_prox_2_2.json',
+                              f'{networkConfigRoot}/fed_prox/config_fed_prox_2_3.json',
+                              f'{networkConfigRoot}/fed_prox/config_fed_prox_2_4.json']
 
     dataConfig_PathList = [f'{dataConfigRoot}/dataConfig_dirichlet.json',
                            f'{dataConfigRoot}/dataConfig_dirichlet.json',
