@@ -550,3 +550,11 @@ server/negotiator/
 
 server/operationData/
 client/operationData/
+
+dataset/*
+!dataset/dataShow.py
+!dataset/cifar10/cifar10DataLoader.py
+!dataset/cifar10_expanded/cifar10_expanded_dataloader.py
+!dataset/cifar100/cifar100DataLoader.py
+!dataset/mnist/mnistDataLoader.py
+!dataset/svhn/svhn_dataloader.py
