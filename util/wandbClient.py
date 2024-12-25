@@ -22,9 +22,14 @@ class WandbClient(Process):
         wandb_run.define_metric("time")
         wandb_run.define_metric("server/performance/server aggregated validation loss", step_metric="custom_step")
         wandb_run.define_metric("server/performance/server aggregated accuracy", step_metric="custom_step")
+        wandb_run.define_metric("server/performance - MNIST/server aggregated validation loss - MNIST", step_metric="custom_step")
+        wandb_run.define_metric("server/performance - MNIST/server aggregated accuracy - MNIST", step_metric="custom_step")
+        wandb_run.define_metric("server/performance - SVHN/server aggregated validation loss - SVHN", step_metric="custom_step")
+        wandb_run.define_metric("server/performance - SVHN/server aggregated accuracy - SVHN", step_metric="custom_step")
         wandb_run.define_metric("server/performance/server round time", step_metric="custom_step")
         for i in range(basicConfig['numClass']):
-            wandb_run.define_metric(f"server/performance/aggregated class {i} accuracy", step_metric="custom_step")
+            wandb_run.define_metric(f"server/performance - MNIST/aggregated class {i} accuracy - MNIST",step_metric="custom_step")
+            wandb_run.define_metric(f"server/performance - SVHN/aggregated class {i} accuracy - SVHN", step_metric="custom_step")
 
         # Define client-specific metrics
         for i in range(num_clients):
@@ -54,7 +59,10 @@ class WandbClient(Process):
 
     def run(self):
         # Initialize wandb inside the child process
-        self.wandb_run = wandb.init(project=self.config['basicInfo']['projectName'], config=self.config, reinit=True)
+        self.wandb_run = wandb.init(project=self.config['basicInfo']['projectName'],
+                                    name=self.config['basicInfo']['testName'],
+                                    tags=self.config['basicInfo']['tags'],
+                                    config=self.config, reinit=True)
         self.register_client_metrics(self.wandb_run)
         print('Wandb client online')
 

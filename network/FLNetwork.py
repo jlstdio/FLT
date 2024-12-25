@@ -36,9 +36,7 @@ class FLNetwork(Process):
         self.clientTypeData = []
         self.typesPerClients = []
 
-        clientTypeDataStr = str(basicConfig['participantsInfo']).split('|')  # "A:0.5|B:0.5"
-
-        for strInfo in clientTypeDataStr:
+        for strInfo in basicConfig['participantsInfo']:
             self.clientTypeData.append(strInfo)
 
         self.typesPerClients = clientTypeDistribution(self.clientTypeData, numClients)
@@ -82,7 +80,6 @@ class FLNetwork(Process):
                                      self.sessionId,
                                      self.scorePath,
                                      self.wandbQueue)
-
         # Start all clients
         for client in clients:
             client.start()

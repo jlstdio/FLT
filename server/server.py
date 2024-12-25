@@ -1,31 +1,18 @@
-import concurrent.futures
 import copy
 import csv
-import json
-import math
+import itertools
 import random
-import shutil
 import threading
+from collections import defaultdict
+from functools import reduce
+from itertools import chain
 from numba.cuda import is_available
 from multiprocessing import Process
-import os
-import time
-import numpy as np
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 import torch
+
 from server.examin_model import examin_model
-from server.fedOptimizer.calm_fisher import calm_fisher
-from server.fedOptimizer.calm_selective_fisher import calm_selective_fisher
-from server.fedOptimizer.fedAvg import fedAvg
-from server.fedOptimizer.fedAvg_w_memorization import fedAvg_w_mem
-from server.fedOptimizer.fedCurv_fisher_calc_client import fedCurv_fisher_calc_client
-from server.fedOptimizer.fedCurv_fisher_calc_server import fedCurv_fisher_calc_server
-from server.fedOptimizer.selective_fisher import selective_fisher
-from server.fedOptimizer.fedWeightedAvg_fisher import fedWeighedAvg_fisher
-from server.picking_clients.pickey_pick_clients import pickey_pick_clients
-from server.picking_clients.random_pick_clients import random_pick_clients
-from server.picking_clients.sequential_pick_clients import sequential_pick_clients
 from server.server_type_loader import server_type_loader
 from server.util_server import *
 from util.fisher import save_fisher, compute_fisher
@@ -43,7 +30,7 @@ class PTHFileHandler(FileSystemEventHandler):
 
 
 class Server(Process):
-    def __init__(self, rootModel, examinDataset, serverConfig, basicConfig, currentRound, flipboard,
+    def __init__(self, rootModel, examinDataset_list, serverConfig, basicConfig, currentRound, flipboard,
                  turnFlag, sessionId, pickedClientsList, resultPath, wandbQueue, totalDistributionSet):
         super(Server, self).__init__()
 
@@ -63,7 +50,7 @@ class Server(Process):
         self.internalIdWithClients = self.participants
         self.status = [True for i in range(self.participants)]
         self.flipboard = flipboard
-        self.examinDataset = examinDataset
+        self.examinDataset_list = examinDataset_list
         self.pickedClientsList = pickedClientsList
         self.clientsList = [i for i in range(self.participants)]
         self.clientsWaitingTime = [0.0 for i in range(self.participants)]
@@ -72,7 +59,7 @@ class Server(Process):
         self.numOfReceivedClients = 0
         self.seed = basicConfig['seed']
         self.rng = np.random.default_rng(self.seed)
-        self.numOfTypes = len(str(basicConfig['participantsInfo']).split('|'))
+        self.numOfTypes = len(basicConfig['participantsInfo'])
         self.roundStartTime = 0
         self.resultPath = resultPath
         self.scorePath = resultPath + "/" + basicConfig["serverScoreFolderRoot"]
@@ -154,7 +141,8 @@ class Server(Process):
     def run_FL(self):
         # initiate variables
         pth_files = [os.path.join(self.pth_folder, f) for f in os.listdir(self.pth_folder) if f.endswith('.pth')]
-        fisher_files = [os.path.join(self.client_fisher_folder, f) for f in os.listdir(self.client_fisher_folder) if f.endswith('.pth')]
+        fisher_files = [os.path.join(self.client_fisher_folder, f) for f in os.listdir(self.client_fisher_folder) if
+                        f.endswith('.pth')]
         memorized_pth_path = self.basicConfig['memorizedPthPath']
 
         # need something to log?
@@ -162,17 +150,45 @@ class Server(Process):
         print(f"Running round {self.currentRound.value} FL with {len(pth_files)} clients")
 
         # tool - calculate_wait_time
-        calculate_wait_time(self.roundStartTime, pth_files, self.currentRound.value, self.clientsWaitingTime, self.wandbQueue)
+        calculate_wait_time(self.roundStartTime, pth_files, self.currentRound.value, self.clientsWaitingTime,
+                            self.wandbQueue)
 
         ##########################################################
         # SELECTING & INITIATING AGGREGATOR ######################
         ##########################################################
+        examinDataset_combined = None
+
+        if len(self.examinDataset_list) == 2:
+            list1 = list(copy.deepcopy(self.examinDataset_list[0]))
+            list2 = list(copy.deepcopy(self.examinDataset_list[1]))
+
+            # 첫 번째 데이터셋의 레이블과 데이터 분리
+            if list1:
+                labels1, data1 = zip(*list1)
+            else:
+                labels1, data1 = (), ()
+
+            # 두 번째 데이터셋의 레이블과 데이터 분리
+            if list2:
+                labels2, data2 = zip(*list2)
+            else:
+                labels2, data2 = (), ()
+
+            # 레이블과 데이터 결합
+            combined_labels = labels1 + labels2
+            combined_data = data1 + data2
+
+            # 결합된 레이블과 데이터를 zip 객체로 반환
+            examinDataset_combined = zip(combined_labels, combined_data)
+        elif len(self.examinDataset_list) == 1:
+            examinDataset_combined = self.examinDataset_list[0]
+
         self.flModel = server_type_loader(self.basicConfig,
                                           self.serverConfig,
                                           self.reservedRootModel,
                                           self.cudaId,
                                           self.currentRound,
-                                          self.examinDataset)
+                                          examinDataset_combined)
         self.flModel.flush()
 
         for filePath in pth_files:
@@ -182,7 +198,6 @@ class Server(Process):
             self.flModel.registerFisher(fisherPath)
 
         ###########################################################
-
         rootModelPath = self.basicConfig['rootModelFilePath']
         aggregatedModelPath = self.basicConfig['aggregateFilePath']
         os.makedirs(aggregatedModelPath, exist_ok=True)
@@ -208,42 +223,60 @@ class Server(Process):
         torch.save(self.rootModel.state_dict(), f'{rootModelPath}/rootModel-{testName}.pth')
         torch.save(self.rootModel.state_dict(), f'{self.resultPath}/rootModel-{testName}.pth')
 
-        # Model 검증
-        examinManager = examin_model(
-            self.cudaId,
-            self.examinDataset,
-            self.basicConfig,
-            self.serverConfig,
-            self.rootModel,
-            f'{rootModelPath}/rootModel-{testName}.pth',
-            self.seed,
-            self.currentRound.value,
-            self.scorePath,
-            'aggregate.csv'
-        )
-        examinManager.loadData()
-        loss, acc, all_targets, all_outputs = examinManager.examin()
-        class_accuracies = calculate_class_accuracies(all_targets, all_outputs, self.basicConfig['numClass'])
+        acc_summed = 0.0
 
-        # 결과 출력
-        for classIdx in class_accuracies.keys():
-            print(f"Round {classIdx} class accuracies: {class_accuracies[classIdx]}")
-            key = f"server/performance/aggregated class {classIdx} accuracy"
-            percent_acc = class_accuracies[classIdx] * 100.0
-            logList = [key, percent_acc, self.currentRound.value]
+        for idx, (dataset_select) in enumerate(self.examinDataset_list):
+            dataset_name = str(self.basicConfig['dataset'][idx])
+            examinManager = examin_model(
+                cudaId=self.cudaId,
+                dataset=dataset_select,
+                basicConfig=self.basicConfig,
+                serverConfig=self.serverConfig,
+                model=self.rootModel,
+                pthPath=f'{rootModelPath}/rootModel-{testName}.pth',
+                seed=self.seed,
+                curRound=self.currentRound.value,
+                scorePath=self.scorePath,
+                scoreFileName=f'aggregate-{dataset_name}.csv'
+            )
+            examinManager.loadData()
+            loss, acc, all_targets, all_outputs = examinManager.examin()
+            result_dict = {
+                "loss": loss,
+                "acc": acc,
+                "all_targets": all_targets,
+                "all_outputs": all_outputs
+            }
+            class_accuracies = calculate_class_accuracies(result_dict['all_targets'],
+                                                          result_dict['all_outputs'],
+                                                          self.basicConfig['numClass'])
+
+            # 결과 출력
+            for classIdx in class_accuracies.keys():
+                print(f"Round {classIdx} class accuracies - {dataset_name.upper()} : {class_accuracies[classIdx]}")
+                key = f"server/performance - {dataset_name.upper()}/aggregated class {classIdx} accuracy - {dataset_name.upper()}"
+                percent_acc = class_accuracies[classIdx] * 100.0
+                logList = [key, percent_acc, self.currentRound.value]
+                self.wandbQueue.put(logList)
+
+            print('-------------')
+
+            key = f"server/performance - {dataset_name.upper()}/server aggregated validation loss - {dataset_name.upper()}"
+            logList = [key, result_dict['loss'], self.currentRound.value]
             self.wandbQueue.put(logList)
 
-        print('-------------')
+            key = f"server/performance - {dataset_name.upper()}/server aggregated accuracy - {dataset_name.upper()}"
+            logList = [key, result_dict['acc'], self.currentRound.value]
+            self.wandbQueue.put(logList)
 
-        key = "server/performance/server aggregated validation loss"
-        logList = [key, loss, self.currentRound.value]
+            acc_summed += result_dict['acc']
+
+            del examinManager
+
+        key = "server/performance - ALL/server aggregated accuracy - ALL"
+        combined_acc = acc_summed / len(self.examinDataset_list)
+        logList = [key, combined_acc, self.currentRound.value]
         self.wandbQueue.put(logList)
-
-        key = "server/performance/server aggregated accuracy"
-        logList = [key, acc, self.currentRound.value]
-        self.wandbQueue.put(logList)
-
-        del examinManager
 
         dataByType, dataByType_pre = processDataByClientType(self.basicConfig['receivedDataPath'], self.numOfTypes)
 
@@ -363,25 +396,42 @@ class Server(Process):
 
     def pick_clients(self):
         pickedClients = []
+
         if self.serverConfig['pickMode'] == 'random':
+            from server.picking_clients.random_pick_clients import random_pick_clients
+
             initial_data = {
                 "clients_per_round": self.updateClientsPerRound,
                 "total_clients": self.basicConfig['numClient']
             }
             pickedClients = random_pick_clients(initial_data, self.rng)
         elif self.serverConfig['pickMode'] == 'sequential':
+            from server.picking_clients.sequential_pick_clients import sequential_pick_clients
+
             initial_data = {
                 "pair_size": self.updateClientsPerRound,
                 "total_clients": self.basicConfig['numClient'],
                 "curRound": self.currentRound.value,
-		        "initial_idx": 3
+                "initial_idx": 3
             }
             pickedClients = sequential_pick_clients(initial_data)
         elif self.serverConfig['pickMode'] == 'pickey':
-            initial_data = {
-                "none": None
-            }
+            from server.picking_clients.pickey_pick_clients import pickey_pick_clients
+
+            initial_data = {"none": None}
             pickedClients = pickey_pick_clients(initial_data, self.rng)
+        elif self.serverConfig['pickMode'] == 'clustered':
+            from server.picking_clients.clustered_pick_clients import clustered_pick_clients
+
+            cluster_A = self.clientsList[:50]
+            cluster_B = self.clientsList[50:]
+            initial_data = {
+                "clustered_clients_list": [cluster_A, cluster_B],
+                "updateClientsPerRound": self.basicConfig['updateClientsPerRound'],
+                "curRound": self.currentRound.value,
+                "initial_cluster": 0
+            }
+            pickedClients = clustered_pick_clients(initial_data, self.rng)
 
         self.update_picked_clients(pickedClients)
 
@@ -394,7 +444,8 @@ class Server(Process):
         # 필요시 fisher 정보를 만들어서 초기화
         if str(self.basicConfig['aggregate_mode']).__contains__('fisher'):
             if self.basicConfig['aggregate_mode'] == 'pretrained_fedAvg':
-                dataloader = loadData(copy.deepcopy(self.examinDataset), self.serverConfig['costFunc'], self.basicConfig['numClass'])
+                dataloader = loadData(copy.deepcopy(self.examinDataset), self.serverConfig['costFunc'],
+                                      self.basicConfig['numClass'])
                 device = torch.device(f"cuda:{self.cudaId}" if is_available() else "cpu")
                 model = copy.deepcopy(self.reservedRootModel)
                 fisher = compute_fisher(model, dataloader, self.serverConfig['costFunc'], device)

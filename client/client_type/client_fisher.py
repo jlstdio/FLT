@@ -24,7 +24,7 @@ from util.param_visualization import param_visualization
 from util.util import scoring
 
 
-class client_fedAvg(client_parent):
+class client_fisher(client_parent):
     def __init__(self, client_internalId, dataset, networkConfig, basicConfig,
                  clientType, config, model, serverRound, flipboard, turnFlag, sessionId, scorePath,
                  wandbQueue):
@@ -70,7 +70,7 @@ class client_fedAvg(client_parent):
                             if n in self.aggregated_fisher:
                                 fisher_loss += (self.aggregated_fisher[n] * (p - old_means[n]) ** 2).sum()
 
-                        loss += (self.clientProfile['clientMetadata']['fisher_reg'] / 2) * fisher_loss
+                        loss += (self.clientProfile['clientMetadata']['penalty_lambda'] / 2) * fisher_loss
                     else:
                         print('aggregated fisher not exists, skipping fisher calc')
 
@@ -99,9 +99,10 @@ class client_fedAvg(client_parent):
         # ##### ##############################
 
         # fisher 정보 계산 ####
-        if self.basicConfig['aggregate_mode'] == 'fedCurv_fisher_client':
+        if self.basicConfig['aggregate_mode'] == 'fed_fisher_client':
+            clientFisherPath = self.basicConfig['aggregateFisherPath'] + f'/client_{self.client_internalId}_fisher.pth'
             fisher = compute_fisher(self.model, self.train_loader, self.config['costFunc'], self.device)
-            save_fisher(fisher, self.clientFisherPath)
+            save_fisher(fisher, clientFisherPath)
         # ############## ####
 
         return logList
