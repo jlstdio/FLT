@@ -3,7 +3,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import torch
+from torch import nn
 from torch.utils.data import DataLoader, TensorDataset
+
 
 def showDistribution(clientsDict, classes, name):
     num_clients = len(clientsDict)
@@ -173,3 +175,16 @@ def loadData(dataset, costFunc, numClass, batchSize=32):
     val_loader = DataLoader(validation_dataset, batch_size=batchSize, shuffle=False)
 
     return val_loader
+
+
+def criterion_select(costFunc):
+    criterion = None
+
+    if costFunc == 'CEloss':
+        criterion = nn.CrossEntropyLoss()
+    elif costFunc == 'BCEloss':
+        criterion = nn.BCELoss()
+    elif costFunc == 'BCEWithLogitsLoss':
+        criterion = nn.BCEWithLogitsLoss()
+
+    return criterion

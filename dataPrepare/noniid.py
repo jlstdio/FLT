@@ -1,56 +1,138 @@
 import json
 from collections import defaultdict
+from itertools import cycle
+
 import numpy as np
 import random
 
 
-def dirichletSplit(dataset, classes, numClients, configPath, seed=1234):
+"""
+types_info = {
+    0: [0.2, 0.8],
+    1: [0.8, 0.2]
+}
+
+type_ratio = [0.5, 0.5]
+"""
+
+def dirichletSplit(dataset_list, classes, total_clients_id_list, configPath, dataset_created_log_path, seed=1234):
+    """
+    데이터셋을 Dirichlet 분할 방식으로 클라이언트에 할당하고,
+    각 클라이언트별 데이터셋 타입별 데이터 수와 비율을 텍스트 파일로 저장합니다.
+
+    Parameters:
+    - dataset_list: 각 데이터셋 타입별 데이터 리스트
+    - classes: 데이터의 클래스 목록
+    - total_clients_id_list: 모든 클라이언트 ID 리스트
+    - configPath: 설정 파일의 경로 (JSON 형식)
+    - outputTxtPath: 결과를 저장할 텍스트 파일의 경로
+    - seed: 랜덤 시드 (기본값: 1234)
+
+    Returns:
+    - clientsDict: 클라이언트별 할당된 데이터 딕셔너리
+    """
     np.random.seed(seed)
     random.seed(seed)
 
+    # 설정 파일 로드
     with open(configPath, 'r') as file:
         config = json.load(file)
 
-    config = config['clientsType'][0]
-    alpha = config['alpha']
+    type_info = config['dataset_mixing_info']
+    type_ratio = config['type_ratio']
 
-    clientsDict = {i: [] for i in range(numClients)}
-    class_data = {cls: [] for cls in classes}
+    print("type_info")
+    print(type_info)
 
-    for cls, data in dataset:
-        class_data[cls].append(data)
+    print("type_ratio")
+    print(type_ratio)
 
-    for cls in classes:
-        # dirichlet distribution
-        class_distribution = np.random.dirichlet([alpha] * numClients)
+    # 데이터셋 타입별 데이터 분할
+    dataset_fraction_list = {idx_type: [] for idx_type in range(len(dataset_list))}
+    for idx_type, dataset in enumerate(dataset_list):
+        dataset = list(dataset)
+        total_size_dataset = len(dataset)
+        past_idx = 0
+        for ratio in type_info[str(idx_type)]:
+            size_dataset_fraction_idx = past_idx + int(total_size_dataset * ratio)
+            dataset_fraction_list[idx_type].append(dataset[past_idx:size_dataset_fraction_idx])
+            past_idx = size_dataset_fraction_idx
 
-        # Calculate the number of data points for each client
-        num_class_data = len(class_data[cls])
-        class_data_idxs = np.arange(num_class_data)
-        np.random.shuffle(class_data_idxs)
+    # 클라이언트 리스트를 타입 비율에 따라 분할
+    if not np.isclose(sum(type_ratio), 1.0):
+        raise ValueError("type_ratio의 합이 1이 아닙니다.")
 
-        class_data_per_client = (class_distribution * num_class_data).astype(int)
+    clients_list_by_type = []
+    current_idx = 0
+    for ratio in type_ratio:
+        next_idx = current_idx + int(len(total_clients_id_list) * ratio)
+        clients_list_by_type.append(total_clients_id_list[current_idx:next_idx])
+        current_idx = next_idx
 
-        start_idx = 0
-        for client_id in range(numClients):
-            num_data = class_data_per_client[client_id]
-            end_idx = start_idx + num_data
-            selected_data_idxs = class_data_idxs[start_idx:end_idx]
-            selected_data = [class_data[cls][i] for i in selected_data_idxs]
-            clientsDict[client_id].extend(zip([cls] * num_data, selected_data))
-            start_idx = end_idx
+    # 클라이언트별 데이터 분배 및 카운트 초기화
+    clientsDict = {i: [] for i in total_clients_id_list}
+    client_counts = {i: {idx_type: 0 for idx_type in range(len(dataset_list))} for i in total_clients_id_list}
 
-        # If there are leftover data points, distribute them to clients
-        leftover_data_idxs = class_data_idxs[start_idx:]
-        if leftover_data_idxs.size > 0:
-            leftover_data = [class_data[cls][i] for i in leftover_data_idxs]
-            for idx, data in enumerate(leftover_data):
-                clientsDict[idx % numClients].append((cls, data))
+    # 데이터 분배 로직
+    for idx_type, clients_id_list in enumerate(clients_list_by_type):
+        alpha = config['clientsType'][idx_type]['alpha']
+        class_distribution = {
+            cls: np.random.dirichlet([alpha] * len(clients_id_list))
+            for cls in classes
+        }
+
+        for idx_dataset, (dataset_list_by_ratio) in enumerate(dataset_fraction_list[idx_type]):
+            class_data = {cls: [] for cls in classes}
+            for cls, data in dataset_list_by_ratio:
+                class_data[cls].append(data)
+
+            for cls in classes:
+                num_class_data = len(class_data[cls])
+                if num_class_data == 0:
+                    continue
+                class_data_idxs = np.arange(num_class_data)
+                np.random.shuffle(class_data_idxs)
+
+                # 각 클라이언트별로 할당할 데이터 수 계산
+                class_data_per_client = (class_distribution[cls] * num_class_data).astype(int)
+                start_idx = 0
+                for client_id in clients_id_list:
+                    client_idx = clients_id_list.index(client_id)
+                    num_data = class_data_per_client[client_idx]
+                    if num_data == 0:
+                        continue
+                    end_idx = start_idx + num_data
+                    selected_data_idxs = class_data_idxs[start_idx:end_idx]
+                    selected_data = [class_data[cls][i] for i in selected_data_idxs]
+                    clientsDict[client_id].extend(zip([cls] * num_data, selected_data))
+                    client_counts[client_id][idx_dataset] += num_data
+                    start_idx = end_idx
+
+                # 남은 데이터 처리
+                leftover_data_idxs = class_data_idxs[start_idx:]
+                if leftover_data_idxs.size > 0:
+                    leftover_data = [class_data[cls][i] for i in leftover_data_idxs]
+                    client_cycle = cycle(clients_id_list)
+                    for data in leftover_data:
+                        client_id = next(client_cycle)
+                        clientsDict[client_id].append((cls, data))
+                        client_counts[client_id][idx_type] += 1
+
+    with open(dataset_created_log_path, 'w') as f:
+        for client_id in total_clients_id_list:
+            total_data = sum(client_counts[client_id].values())
+            f.write(f"Client {client_id}:\n")
+            for idx_type in range(len(dataset_list)):
+                count = client_counts[client_id][idx_type]
+                ratio = count / total_data if total_data > 0 else 0
+                f.write(f"  Dataset Type {idx_type}: {count} data, Ratio: {ratio:.4f}\n")
+            f.write("\n")
 
     return clientsDict
 
 
-def dirichlet_equal_split(dataset, classes, alpha, num_clients, seed):
+
+def dirichlet_equal_split(dataset, classes, alpha, clients_id_list, seed):
     np.random.seed(seed)
     random.seed(seed)
 
@@ -67,7 +149,7 @@ def dirichlet_equal_split(dataset, classes, alpha, num_clients, seed):
         examples_per_label.append(np.sum(labels == i))
 
     # Each client has a multinomial distribution over classes drawn from a Dirichlet distribution
-    for i in range(num_clients):
+    for i in clients_id_list:
         proportion = np.random.dirichlet(alpha * np.ones(len(classes)))
         multinomial_vals.append(proportion)
 
@@ -82,14 +164,15 @@ def dirichlet_equal_split(dataset, classes, alpha, num_clients, seed):
 
     example_indices = np.array(example_indices, dtype=object)
 
-    client_samples = [[] for _ in range(num_clients)]
+    idx = [i for i in range(len(clients_id_list))]
+    client_samples = [[] for _ in idx]
     count = np.zeros(len(classes)).astype(int)
-    class_labels_for_clients = [[] for _ in range(num_clients)]
+    class_labels_for_clients = [[] for _ in idx]
 
-    examples_per_client = int(len(labels) / num_clients)
+    examples_per_client = int(len(labels) / len(clients_id_list))
 
     # Distributing examples to clients based on multinomial distribution
-    for client in range(num_clients):
+    for client in idx:
         for _ in range(examples_per_client):
             if multinomial_vals[client].sum() > 0:
                 sampled_label = np.argmax(np.random.multinomial(1, multinomial_vals[client] / multinomial_vals[client].sum()))
@@ -104,15 +187,16 @@ def dirichlet_equal_split(dataset, classes, alpha, num_clients, seed):
                         multinomial_vals[:, sampled_label] = 0
 
     # Shuffling samples for each client
-    for client in range(num_clients):
+    for client in idx:
         paired_samples = list(zip(class_labels_for_clients[client], client_samples[client]))
         np.random.shuffle(paired_samples)
-        dict_users[client] = paired_samples
+        client_id = clients_id_list[idx]
+        dict_users[client_id] = paired_samples
 
     return dict_users
 
 
-def pathologicalSplit(dataset, classes, numClients, configPath='', seed=1234):
+def pathologicalSplit(dataset, classes, clients_id_list, configPath='', seed=1234):
     np.random.seed(seed)
     random.seed(seed)
 
@@ -123,7 +207,7 @@ def pathologicalSplit(dataset, classes, numClients, configPath='', seed=1234):
     classesPerClient = int(config['classesPerClient'])
 
     # Initialize dictionary for clients
-    clientsDict = {i: [] for i in range(numClients)}
+    clientsDict = {i: [] for i in clients_id_list}
 
     # Organize data by class
     class_data = {cls: [] for cls in classes}
@@ -136,21 +220,21 @@ def pathologicalSplit(dataset, classes, numClients, configPath='', seed=1234):
 
     # Calculate classes per client
     # Ensure that all classes are assigned
-    if classesPerClient * numClients < num_classes:
+    if classesPerClient * len(clients_id_list) < num_classes:
         raise ValueError("classesPerClient * numClients must be >= number of classes")
 
     # Assign classes to clients
     client_classes = defaultdict(list)
     for idx, cls in enumerate(shuffled_classes):
-        client_id = idx % numClients
+        client_id = idx % len(clients_id_list)
         client_classes[client_id].append(cls)
 
     # Optionally, assign additional classes if classesPerClient > classes assigned
-    for client_id in range(numClients):
-        while len(client_classes[client_id]) < classesPerClient:
+    for idx in range(len(clients_id_list)):
+        while len(client_classes[idx]) < classesPerClient:
             additional_class = np.random.choice(shuffled_classes)
-            if additional_class not in client_classes[client_id]:
-                client_classes[client_id].append(additional_class)
+            if additional_class not in client_classes[idx]:
+                client_classes[idx].append(additional_class)
 
     # Assign data to clients based on their assigned classes
     for client_id, assigned_classes in client_classes.items():

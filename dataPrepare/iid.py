@@ -1,12 +1,12 @@
 import numpy as np
 
 
-def iidSplit(dataset, classes, batchSize, numClients, seed=1234):
+def iidSplit(dataset, classes, batchSize, clients_id_list, seed=1234):
     # torch.manual_seed(seed)
     np.random.seed(seed)
     # random.seed(seed)
 
-    clientsDict = {i: [] for i in range(numClients)}
+    clientsDict = {i: [] for i in clients_id_list}
     class_data = {cls: [] for cls in classes}
 
     # Organize dataset by classes
@@ -15,7 +15,7 @@ def iidSplit(dataset, classes, batchSize, numClients, seed=1234):
 
     N = batchSize // len(classes)
 
-    for i in range(numClients):
+    for i in clients_id_list:
         clientsDict[i] = []
         for cls in classes:
             if len(class_data[cls]) >= N:

@@ -9,7 +9,7 @@ import os
 
 def server_type_loader(basicConfig, serverConfig, reservedRootModel, cudaId, currentRound, examinDataset):
     flModel = None
-    if basicConfig['aggregate_mode'] == 'fedAvg':
+    if basicConfig['aggregate_mode'] == 'fedAvg' or basicConfig['aggregate_mode'] == 'fed_avg':
         from server.fedOptimizer.fedAvg import fedAvg
         flModel = fedAvg(reservedRootModel, cudaId)
 
@@ -32,7 +32,7 @@ def server_type_loader(basicConfig, serverConfig, reservedRootModel, cudaId, cur
             'curRound': currentRound.value
         }
         flModel = fedAvg_w_mem(reservedRootModel, cudaId, additional_info_dict)
-    elif basicConfig['aggregate_mode'] == 'fedCurv_fisher_client':
+    elif basicConfig['aggregate_mode'] == 'fisher_client':
         from server.fedOptimizer.fedCurv_fisher_calc_client import fedCurv_fisher_calc_client
         flModel = fedCurv_fisher_calc_client(reservedRootModel, cudaId, None)
 
@@ -46,7 +46,7 @@ def server_type_loader(basicConfig, serverConfig, reservedRootModel, cudaId, cur
         }
 
         flModel = fedWeighedAvg_fisher(reservedRootModel, cudaId, additional_info_dict)
-    elif basicConfig['aggregate_mode'] == 'fedCurv_fisher_server':
+    elif basicConfig['aggregate_mode'] == 'fisher_server':
         from server.fedOptimizer.fedCurv_fisher_calc_server import fedCurv_fisher_calc_server
 
         additional_info_dict = {

@@ -17,7 +17,7 @@ import os
 import seaborn as sns
 from torch.optim.lr_scheduler import CosineAnnealingLR
 
-from client.util_client import target_type_convert, criterion_select
+from client.util_client import target_type_convert, criterion_select, split_data_by_class_ratio
 from util.fisher import compute_fisher, save_fisher, load_fisher
 from util.param_visualization import param_visualization
 from util.util import scoring
@@ -90,10 +90,14 @@ class client_parent(Process):
     def loadData(self):
         try:
             train_ratio = round(self.clientProfile['clientMetadata']['dataSize'], 2)
-            train_size = int(train_ratio * len(self.dataset))
 
+            '''
+            train_size = int(train_ratio * len(self.dataset))
             train_data = self.dataset[:train_size]
             test_data = self.dataset[train_size:]
+            '''
+
+            train_data, test_data = split_data_by_class_ratio(dataset=self.dataset, train_ratio=train_ratio)
 
             train_y, train_x = zip(*train_data)
             valid_y, valid_x = zip(*test_data)
@@ -132,6 +136,7 @@ class client_parent(Process):
             self.val_loader = DataLoader(val_dataset, batch_size=self.clientProfile['clientMetadata']['batchSize'], shuffle=True)
         except Exception as e:
             print(f'client{self.client_internalId} - {e}')
+
 
     def logs_before_train(self):
         lr_origin = self.clientProfile['clientMetadata']['lr']
@@ -283,6 +288,10 @@ class client_parent(Process):
             # update negotiated configuration (hyperparameter)
             os.remove(rxPath)
             self.clientProfile = default_metadata  # load updated parameter
+
+        key_penalty_lambda = f"client/metadata/penalty_reg/client{self.client_internalId} reg"
+        logList_key_penalty_lambda = [key_penalty_lambda, self.clientProfile["clientMetadata"]["penalty_lambda"], self.serverRound.value]
+        self.wandbQueue.put(logList_key_penalty_lambda)
         """ [CLOSE] HYPERPARAMETER NEGOTIATING """
 
         """ [OPEN] TRAIN """

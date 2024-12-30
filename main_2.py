@@ -1,27 +1,15 @@
 import copy
 import multiprocessing
 import os
-import sys
 import time
-from random import shuffle
-import random
-import numpy as np
-from dataPrepare.iid import iidSplit
+from dataPrepare.data_prepare_manager import create_dataset_dict, select_dataset
 from dataPrepare.noniid import *
-from dataPrepare.partiallyNonIid import custom_split_non_iid, difference_bias_by_type
-from dataset.cifar10.cifar10DataLoader import cifar10Dataloader
-from dataset.cifar100.cifar100DataLoader import cifar100Dataloader
-from dataset.mnist.mnistDataLoader import mnistDataloader
-# from model.resnet50 import resNet50
 from model.testModel_wo_softmax import testNN_wo_Softmax
 from model.testModel_w_softmax import testNN_w_Softmax
 from network.FLNetwork import FLNetwork
-from server.pretrainer import pretrainer
-from server.server import Server, calculate_class_accuracies
+from server.server import Server
 import json
 import torch
-import wandb
-from torch import nn
 from util.util import showDistribution, dltAllFiles
 from util.wandbClient import WandbClient
 
@@ -48,54 +36,63 @@ def runner(networkConfigPath, dataConfigPath):
     resultRootPath = basicConfig["resultRoot"] + "/" + basicConfig['testName'] + "-" + str(round(time.time()))
     serverScoreFolderPath = resultRootPath + "/" + basicConfig["serverScoreFolderRoot"]
     clientScoreFolderPath = resultRootPath + "/" + basicConfig["clientScoreFolderRoot"]
+    dataset_created_log_path = serverScoreFolderPath + basicConfig["dataset_created_log_path"]
     os.makedirs(serverScoreFolderPath, exist_ok=True)
     os.makedirs(clientScoreFolderPath, exist_ok=True)
 
-    dltAllFiles(basicConfig['errorFilePath'])
-    dltAllFiles(basicConfig['receivedPthPath'])
-    dltAllFiles(basicConfig['receivedDataPath'])
-    dltAllFiles(basicConfig['rootModelFilePath'])
-    dltAllFiles(basicConfig['clientsMetadataFolderPath'])
-    dltAllFiles(basicConfig['receivedProfilePath'])
-    dltAllFiles(basicConfig['memorizedPthPath'])
+    cleanUp_everything(basicConfig=basicConfig)
 
     testName = basicConfig['testName']
 
-    #########################
-    # DATASET TYPE SETTINGS #
-    #########################
-    dataloader = None
-    if basicConfig['dataset'] == 'cifar-10':
-        dataloader = cifar10Dataloader('./dataset/cifar10')
-    elif basicConfig['dataset'] == 'cifar-100':
-        dataloader = cifar100Dataloader('./dataset/cifar100')
-    (x_train, y_train), (x_test, y_test) = dataloader.load_data()
+    ########################################
+    # DATASET TYPE & DISTRIBUTION SETTINGS #
+    ########################################
 
-    clientDatasetSize = int(len(y_train) * 0.5)
-    clientDataset = zip(y_train[:clientDatasetSize], x_train[:clientDatasetSize])
+    clients_id_list = [i for i in range(numClients)]
+    mnist_clients_ratio = 0.5
 
-    serverDatasetSize = int(len(y_test) * (1.0 - serverConfig['server_pretrain_ratio']))
-    serverTestDataset = zip(y_test[:serverDatasetSize], x_test[:serverDatasetSize])
-    serverPreTrainDataset = zip(y_test[serverDatasetSize:], x_test[serverDatasetSize:])
-    # ##################################################################
+    dataset_list = basicConfig['dataset']
+    clientDataset_cifar10_original, serverTestDataset_cifar10_original, classes_cifar10 = select_dataset(dataset_name=dataset_list[0],
+                                                                                                         client_subset_start_point=0.0,
+                                                                                                         client_subset_ratio=0.25,
+                                                                                                         server_subset_ratio=1.0)
 
-    #################################
-    # DATASET DISTRIBUTION SETTINGS #
-    #################################
-    classes = list(set(y_test))
-    clientsDatasetDict = None
-    if basicConfig['dataset_distribution'] == 'iid':
-        clientsDatasetDict = iidSplit(clientDataset, classes, round(len(y_train) / numClients), numClients, basicConfig['seed'])
-    elif basicConfig['dataset_distribution'] == 'dirichlet_vanilla':
-        clientsDatasetDict = dirichletSplit(clientDataset, classes, numClients, dataConfigPath, basicConfig['seed'])
-    elif basicConfig['dataset_distribution'] == 'dirichlet_strict_equal':
-        clientsDatasetDict = dirichlet_equal_split(clientDataset, classes, 1.0, numClients, basicConfig['seed'])
-    elif basicConfig['dataset_distribution'] == 'dirichlet_diff_by_type':
-        clientsDatasetDict = difference_bias_by_type(clientDataset, classes, configPath=dataConfigPath,
-                                                     seed=basicConfig['seed'])
-    elif basicConfig['dataset_distribution'] == 'pathological':
-        clientsDatasetDict = pathologicalSplit(clientDataset, classes, numClients, configPath=dataConfigPath,
-                                               seed=basicConfig['seed'])
+    clientDataset_cifar10_jittered, serverTestDataset_cifar10_jittered, _ = select_dataset(dataset_name=dataset_list[1],
+                                                                                           client_subset_start_point=0.25,
+                                                                                           client_subset_ratio=0.25,
+                                                                                           server_subset_ratio=1.0)
+
+    clientDataset_cifar10_rotated, serverTestDataset_cifar10_rotated, _ = select_dataset(dataset_name=dataset_list[2],
+                                                                                         client_subset_start_point=0.5,
+                                                                                         client_subset_ratio=0.25,
+                                                                                         server_subset_ratio=1.0)
+
+    clientDataset_cifar10_noised, serverTestDataset_cifar10_noised, _ = select_dataset(dataset_name=dataset_list[3],
+                                                                                       client_subset_start_point=0.75,
+                                                                                       client_subset_ratio=0.25,
+                                                                                       server_subset_ratio=1.0)
+
+    serverTestDataset_list = [serverTestDataset_cifar10_original,
+                              serverTestDataset_cifar10_jittered,
+                              serverTestDataset_cifar10_rotated,
+                              serverTestDataset_cifar10_noised]
+
+    classes = classes_cifar10
+
+    clientsDatasetDict = create_dataset_dict(dataset_distribution_name=basicConfig['dataset_distribution'],
+                                             clientDataset_list=[clientDataset_cifar10_original,
+                                                                 clientDataset_cifar10_jittered,
+                                                                 clientDataset_cifar10_rotated,
+                                                                 clientDataset_cifar10_noised],
+                                             classes=classes,
+                                             batchSize=0,
+                                             clients_id_list=clients_id_list,
+                                             dataConfigPath=dataConfigPath,
+                                             dataset_created_log_path=dataset_created_log_path,
+                                             seed=seed)
+
+    # check dataset
+    print('[TEST] combined dict length: ' + str(len(clientsDatasetDict)))
 
     distributionSavePath = f'{resultRootPath}/clientsDataset {testName} - {int(round(time.time()))}'
     totalDistributionSet = showDistribution(clientsDatasetDict, classes, distributionSavePath)
@@ -105,6 +102,7 @@ def runner(networkConfigPath, dataConfigPath):
     # CRITERION SETTINGS #
     ######################
     numClasses = basicConfig['numClass']
+    modelToLoad = None
     if serverConfig['costFunc'] == 'CEloss':
         modelToLoad = testNN_wo_Softmax(numClasses)
     elif serverConfig['costFunc'] == 'BCEloss':
@@ -117,34 +115,21 @@ def runner(networkConfigPath, dataConfigPath):
     wandbClientServer.start()
     wandbQueue = wandbClientServer.get_queue()
 
+    modelToClients = copy.deepcopy(modelToLoad)
     network = FLNetwork(basicConfig=basicConfig,
                         clientsDatasetDict=clientsDatasetDict,
                         clientConfig=clientConfig,
                         networkConfig=networkConfig,
-                        modelToLoad=modelToLoad,
+                        modelToLoad=modelToClients,
                         scorePath=clientScoreFolderPath,
                         wandbQueue=wandbQueue)
     network.start()
 
     serverRound, flipboard, turnFlag, sessionId, pickedClients = network.getSharedInfo()
 
-    if serverConfig['server_pretrain_epoch'] > 0:
-        scorePath = resultRootPath + "/" + basicConfig["serverScoreFolderRoot"]
-        pretrainer_agent = pretrainer(cudaId=basicConfig['startingCuda'],
-                   train_dataset=serverPreTrainDataset,
-                   basicConfig=basicConfig,
-                   serverConfig=serverConfig,
-                   model=modelToLoad,
-                   seed=seed,
-                   scorePath=scorePath,
-                   scoreFileName='aggregate.csv')
-
-        modelToServer = copy.deepcopy(pretrainer_agent.train())
-    else:
-        modelToServer = copy.deepcopy(modelToLoad)
-
+    modelToServer = copy.deepcopy(modelToLoad)
     server = Server(rootModel=modelToServer,
-                    examinDataset=serverTestDataset,
+                    examinDataset_list=serverTestDataset_list,
                     serverConfig=serverConfig,
                     basicConfig=basicConfig,
                     currentRound=serverRound,
@@ -167,6 +152,16 @@ def runner(networkConfigPath, dataConfigPath):
     print('end of runner')
 
 
+def cleanUp_everything(basicConfig):
+    dltAllFiles(basicConfig['errorFilePath'])
+    dltAllFiles(basicConfig['receivedPthPath'])
+    dltAllFiles(basicConfig['receivedDataPath'])
+    dltAllFiles(basicConfig['rootModelFilePath'])
+    dltAllFiles(basicConfig['clientsMetadataFolderPath'])
+    dltAllFiles(basicConfig['receivedProfilePath'])
+    dltAllFiles(basicConfig['memorizedPthPath'])
+
+
 if __name__ == "__main__":
     multiprocessing.set_start_method('spawn')
 
@@ -180,17 +175,21 @@ if __name__ == "__main__":
     runner(network_configPath, data_configPath)
     '''
 
-    networkConfig_PathList = [f'{networkConfigRoot}/fed_prox/config_fed_prox_1_3.json',
-                              f'{networkConfigRoot}/fed_prox/config_fed_prox_1_4.json',
-                              f'{networkConfigRoot}/calm_fisher/config_calm_fisher_1_2.json',
-                              f'{networkConfigRoot}/calm_fisher/config_calm_fisher_1_3.json',
-                              f'{networkConfigRoot}/calm_fisher/config_calm_fisher_1_4.json']
+    networkConfig_PathList = [f'{networkConfigRoot}/domain_shift_performance/config_fisher_server_MD_mixed_RP_1.json',
+                              f'{networkConfigRoot}/domain_shift_performance/config_fisher_server_MD_mixed_RP_2.json',
+                              f'{networkConfigRoot}/domain_shift_performance/config_fedavg_MD_not_mixed_RP.json',
+                              f'{networkConfigRoot}/domain_shift_performance/config_fisher_server_MD_not_mixed_RP_0.json',
+                              f'{networkConfigRoot}/domain_shift_performance/config_fisher_server_MD_not_mixed_RP_1.json',
+                              f'{networkConfigRoot}/domain_shift_performance/config_fisher_server_MD_not_mixed_RP_2.json']
 
-    dataConfig_PathList = [f'{dataConfigRoot}/dataConfig_dirichlet.json',
-                           f'{dataConfigRoot}/dataConfig_dirichlet.json',
-                           f'{dataConfigRoot}/dataConfig_dirichlet.json',
-                           f'{dataConfigRoot}/dataConfig_dirichlet.json',
-                           f'{dataConfigRoot}/dataConfig_dirichlet.json']
+    dataConfig_PathList = [f'{dataConfigRoot}/dataConfig_dirichlet_mixed_type.json',
+                           f'{dataConfigRoot}/dataConfig_dirichlet_mixed_type.json',
+                           f'{dataConfigRoot}/dataConfig_dirichlet_mixed_type.json',
+                           f'{dataConfigRoot}/dataConfig_dirichlet_mixed_type.json',
+                           f'{dataConfigRoot}/dataConfig_dirichlet_not_mixed_type.json',
+                           f'{dataConfigRoot}/dataConfig_dirichlet_not_mixed_type.json',
+                           f'{dataConfigRoot}/dataConfig_dirichlet_not_mixed_type.json',
+                           f'{dataConfigRoot}/dataConfig_dirichlet_not_mixed_type.json']
 
     for network_configPath, data_configPath in zip(networkConfig_PathList, dataConfig_PathList):
         print(f'running with {network_configPath} | {data_configPath}')

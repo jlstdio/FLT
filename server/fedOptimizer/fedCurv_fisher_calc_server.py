@@ -23,6 +23,7 @@ def average_weights(weights: List[Dict[str, torch.Tensor]]) -> Dict[str, torch.T
 
     return new_state_dict
 
+
 class fedCurv_fisher_calc_server(fedOptParent):
     def __init__(self, rootModel, cudaId, additionalInfo):
         super().__init__(rootModel, cudaId, additionalInfo)
