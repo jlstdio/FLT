@@ -51,14 +51,39 @@ def runner(networkConfigPath, dataConfigPath):
     clients_id_list = [i for i in range(numClients)]
     mnist_clients_ratio = 0.5
 
-    clientDataset_minst, serverTestDataset_mnist, classes_mnist = select_dataset(basicConfig['dataset'][0], 0.41, 1.0)
-    clientDataset_svhn, serverTestDataset_svhn, classes_svhn = select_dataset(basicConfig['dataset'][1], 0.34, 1.0)
+    dataset_list = basicConfig['dataset']
+    clientDataset_cifar10_original, serverTestDataset_cifar10_original, classes_cifar10 = select_dataset(dataset_name=dataset_list[0],
+                                                                                                         client_subset_start_point=0.0,
+                                                                                                         client_subset_ratio=0.25,
+                                                                                                         server_subset_ratio=1.0)
 
-    serverTestDataset_list = [serverTestDataset_mnist, serverTestDataset_svhn]
-    classes = classes_mnist = classes_svhn
+    clientDataset_cifar10_jittered, serverTestDataset_cifar10_jittered, _ = select_dataset(dataset_name=dataset_list[1],
+                                                                                           client_subset_start_point=0.25,
+                                                                                           client_subset_ratio=0.25,
+                                                                                           server_subset_ratio=1.0)
+
+    clientDataset_cifar10_rotated, serverTestDataset_cifar10_rotated, _ = select_dataset(dataset_name=dataset_list[2],
+                                                                                         client_subset_start_point=0.5,
+                                                                                         client_subset_ratio=0.25,
+                                                                                         server_subset_ratio=1.0)
+
+    clientDataset_cifar10_noised, serverTestDataset_cifar10_noised, _ = select_dataset(dataset_name=dataset_list[3],
+                                                                                       client_subset_start_point=0.75,
+                                                                                       client_subset_ratio=0.25,
+                                                                                       server_subset_ratio=1.0)
+
+    serverTestDataset_list = [serverTestDataset_cifar10_original,
+                              serverTestDataset_cifar10_jittered,
+                              serverTestDataset_cifar10_rotated,
+                              serverTestDataset_cifar10_noised]
+
+    classes = classes_cifar10
 
     clientsDatasetDict = create_dataset_dict(dataset_distribution_name=basicConfig['dataset_distribution'],
-                                             clientDataset_list=[clientDataset_minst, clientDataset_svhn],
+                                             clientDataset_list=[clientDataset_cifar10_original,
+                                                                 clientDataset_cifar10_jittered,
+                                                                 clientDataset_cifar10_rotated,
+                                                                 clientDataset_cifar10_noised],
                                              classes=classes,
                                              batchSize=0,
                                              clients_id_list=clients_id_list,
@@ -150,27 +175,15 @@ if __name__ == "__main__":
     runner(network_configPath, data_configPath)
     '''
 
-    networkConfig_PathList = [f'{networkConfigRoot}/domain_adaptation/config_da_fedavg_0_0.json',
-                              f'{networkConfigRoot}/domain_adaptation/config_da_fedavg_0_1.json',
-                              f'{networkConfigRoot}/domain_adaptation/config_da_fedavg_0_2.json',
-                              f'{networkConfigRoot}/domain_adaptation/config_da_fedavg_0_3.json',
-                              f'{networkConfigRoot}/domain_adaptation/config_da_fedavg_0_4.json',
-                              f'{networkConfigRoot}/domain_adaptation/config_da_fedprox_1_0.json',
-                              f'{networkConfigRoot}/domain_adaptation/config_da_fedprox_1_1.json',
-                              f'{networkConfigRoot}/domain_adaptation/config_da_fedprox_1_2.json',
-                              f'{networkConfigRoot}/domain_adaptation/config_da_fedprox_1_3.json',
-                              f'{networkConfigRoot}/domain_adaptation/config_da_fedprox_1_4.json']
+    networkConfig_PathList = [f'{networkConfigRoot}/domain_shift_performance/config_fedprox_MD_mixed_RP_3.json',
+                              f'{networkConfigRoot}/domain_shift_performance/config_fedprox_MD_not_mixed_RP_0.json',
+                              f'{networkConfigRoot}/domain_shift_performance/config_fedprox_MD_not_mixed_RP_1.json',
+                              f'{networkConfigRoot}/domain_shift_performance/config_fedprox_MD_not_mixed_RP_3.json']
 
-    dataConfig_PathList = [f'{dataConfigRoot}/dataConfig_dirichlet_multiple_type.json',
-                           f'{dataConfigRoot}/dataConfig_dirichlet_mixed_type_1.json',
-                           f'{dataConfigRoot}/dataConfig_dirichlet_mixed_type_2.json',
-                           f'{dataConfigRoot}/dataConfig_dirichlet_mixed_type_1.json',
-                           f'{dataConfigRoot}/dataConfig_dirichlet_mixed_type_2.json',
-                           f'{dataConfigRoot}/dataConfig_dirichlet_multiple_type.json',
-                           f'{dataConfigRoot}/dataConfig_dirichlet_mixed_type_1.json',
-                           f'{dataConfigRoot}/dataConfig_dirichlet_mixed_type_2.json',
-                           f'{dataConfigRoot}/dataConfig_dirichlet_mixed_type_1.json',
-                           f'{dataConfigRoot}/dataConfig_dirichlet_mixed_type_2.json']
+    dataConfig_PathList = [f'{dataConfigRoot}/dataConfig_dirichlet_mixed_type.json',
+                           f'{dataConfigRoot}/dataConfig_dirichlet_not_mixed_type.json',
+                           f'{dataConfigRoot}/dataConfig_dirichlet_not_mixed_type.json',
+                           f'{dataConfigRoot}/dataConfig_dirichlet_not_mixed_type.json']
 
     for network_configPath, data_configPath in zip(networkConfig_PathList, dataConfig_PathList):
         print(f'running with {network_configPath} | {data_configPath}')

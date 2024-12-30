@@ -175,14 +175,16 @@ if __name__ == "__main__":
     runner(network_configPath, data_configPath)
     '''
 
-    networkConfig_PathList = [f'{networkConfigRoot}/domain_shift_performance/config_fisher_client_MD_mixed_RP_2.json',
-                              f'{networkConfigRoot}/domain_shift_performance/config_fisher_client_MD_mixed_RP_3.json',
-                              f'{networkConfigRoot}/domain_shift_performance/config_fisher_client_MD_not_mixed_RP_0.json',
-                              f'{networkConfigRoot}/domain_shift_performance/config_fisher_client_MD_not_mixed_RP_1.json',
-                              f'{networkConfigRoot}/domain_shift_performance/config_fisher_client_MD_not_mixed_RP_2.json',
-                              f'{networkConfigRoot}/domain_shift_performance/config_fisher_client_MD_not_mixed_RP_3.json']
+    networkConfig_PathList = [f'{networkConfigRoot}/domain_shift_performance/config_fisher_server_MD_mixed_RP_1.json',
+                              f'{networkConfigRoot}/domain_shift_performance/config_fisher_server_MD_mixed_RP_2.json',
+                              f'{networkConfigRoot}/domain_shift_performance/config_fedavg_MD_not_mixed_RP.json',
+                              f'{networkConfigRoot}/domain_shift_performance/config_fisher_server_MD_not_mixed_RP_0.json',
+                              f'{networkConfigRoot}/domain_shift_performance/config_fisher_server_MD_not_mixed_RP_1.json',
+                              f'{networkConfigRoot}/domain_shift_performance/config_fisher_server_MD_not_mixed_RP_2.json']
 
     dataConfig_PathList = [f'{dataConfigRoot}/dataConfig_dirichlet_mixed_type.json',
+                           f'{dataConfigRoot}/dataConfig_dirichlet_mixed_type.json',
+                           f'{dataConfigRoot}/dataConfig_dirichlet_mixed_type.json',
                            f'{dataConfigRoot}/dataConfig_dirichlet_mixed_type.json',
                            f'{dataConfigRoot}/dataConfig_dirichlet_not_mixed_type.json',
                            f'{dataConfigRoot}/dataConfig_dirichlet_not_mixed_type.json',

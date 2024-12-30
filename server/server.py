@@ -11,7 +11,8 @@ from multiprocessing import Process
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 import torch
-
+import os
+import numpy as np
 from server.examin_model import examin_model
 from server.server_type_loader import server_type_loader
 from server.util_server import *
@@ -156,32 +157,32 @@ class Server(Process):
         ##########################################################
         # SELECTING & INITIATING AGGREGATOR ######################
         ##########################################################
+        # 합쳐진 결과를 담을 변수
         examinDataset_combined = None
 
-        if len(self.examinDataset_list) == 2:
-            list1 = list(copy.deepcopy(self.examinDataset_list[0]))
-            list2 = list(copy.deepcopy(self.examinDataset_list[1]))
+        # 아무 데이터가 없을 경우
+        if not self.examinDataset_list:
+            return examinDataset_combined
 
-            # 첫 번째 데이터셋의 레이블과 데이터 분리
-            if list1:
-                labels1, data1 = zip(*list1)
+        # 여러 개의 리스트를 모두 순회하며 레이블과 데이터를 분리 후 합침
+        combined_labels = []
+        combined_data = []
+        for single_dataset in self.examinDataset_list:
+            # deepcopy를 사용해 원본을 건드리지 않도록 복사
+            single_dataset_copy = list(copy.deepcopy(single_dataset))
+
+            # (label, data) 형태로 되어있다면 언패킹
+            if single_dataset_copy:
+                labels, data = zip(*single_dataset_copy)
             else:
-                labels1, data1 = (), ()
+                labels, data = (), ()
 
-            # 두 번째 데이터셋의 레이블과 데이터 분리
-            if list2:
-                labels2, data2 = zip(*list2)
-            else:
-                labels2, data2 = (), ()
+            # 분리한 레이블과 데이터를 합치기
+            combined_labels.extend(labels)
+            combined_data.extend(data)
 
-            # 레이블과 데이터 결합
-            combined_labels = labels1 + labels2
-            combined_data = data1 + data2
-
-            # 결합된 레이블과 데이터를 zip 객체로 반환
-            examinDataset_combined = zip(combined_labels, combined_data)
-        elif len(self.examinDataset_list) == 1:
-            examinDataset_combined = self.examinDataset_list[0]
+        # 레이블과 데이터가 합쳐진 결과를 zip 객체로 반환
+        examinDataset_combined = zip(combined_labels, combined_data)
 
         self.flModel = server_type_loader(self.basicConfig,
                                           self.serverConfig,
@@ -283,6 +284,7 @@ class Server(Process):
         average_results = calculate_average(dataByType)  # [{'avg_acc': avg_accuracy, 'avg_loss': avg_loss}, ...]
         average_results_pre = calculate_average(dataByType_pre)
 
+        avg_acc_all_client = 0.0
         for idx, data in enumerate(average_results):
             key = f"clientType/performance/validation/accuracy/client type{idx} validation accuracy"
             logList = [key, data['avg_acc'], self.currentRound.value]
@@ -292,6 +294,14 @@ class Server(Process):
             logList = [key, data['avg_loss'], self.currentRound.value]
             self.wandbQueue.put(logList)
 
+            avg_acc_all_client += data['avg_acc']
+
+        avg_acc_all_client /= len(average_results)
+        key = f"clientType/performance/validation/loss/client type all validation accuracy"
+        logList = [key, avg_acc_all_client, self.currentRound.value]
+        self.wandbQueue.put(logList)
+
+        avg_acc_all_client = 0.0
         for idx, data in enumerate(average_results_pre):
             key = f"clientType/performance/pre-validation/accuracy/client type{idx} validation accuracy"
             logList = [key, data['avg_acc'], self.currentRound.value]
@@ -300,6 +310,13 @@ class Server(Process):
             key = f"clientType/performance/pre-validation/loss/client type{idx} validation loss"
             logList = [key, data['avg_loss'], self.currentRound.value]
             self.wandbQueue.put(logList)
+
+            avg_acc_all_client += data['avg_acc']
+
+        avg_acc_all_client /= len(average_results)
+        key = f"clientType/performance/pre-validation/loss/client type all validation accuracy"
+        logList = [key, avg_acc_all_client, self.currentRound.value]
+        self.wandbQueue.put(logList)
 
         dltAllFiles(self.basicConfig['receivedDataPath'])
         dltAllFiles(self.basicConfig['receivedFisherPath'])
@@ -423,10 +440,17 @@ class Server(Process):
         elif self.serverConfig['pickMode'] == 'clustered':
             from server.picking_clients.clustered_pick_clients import clustered_pick_clients
 
-            cluster_A = self.clientsList[:50]
-            cluster_B = self.clientsList[50:]
+            participantInfo = self.basicConfig['participantsInfo']
+            past_idx = 0
+            cluster_list = []
+            for typeInfo in participantInfo:
+                type_id = typeInfo.split(':')[0]
+                type_ratio = float(typeInfo.split(':')[1])
+                next_idx = past_idx + int(len(self.clientsList) * type_ratio)
+                cluster_list.append(self.clientsList[past_idx:next_idx])
+
             initial_data = {
-                "clustered_clients_list": [cluster_A, cluster_B],
+                "clustered_clients_list": cluster_list,
                 "updateClientsPerRound": self.basicConfig['updateClientsPerRound'],
                 "curRound": self.currentRound.value,
                 "initial_cluster": 0

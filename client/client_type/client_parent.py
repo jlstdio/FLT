@@ -288,6 +288,10 @@ class client_parent(Process):
             # update negotiated configuration (hyperparameter)
             os.remove(rxPath)
             self.clientProfile = default_metadata  # load updated parameter
+
+        key_penalty_lambda = f"client/metadata/penalty_reg/client{self.client_internalId} reg"
+        logList_key_penalty_lambda = [key_penalty_lambda, self.clientProfile["clientMetadata"]["penalty_lambda"], self.serverRound.value]
+        self.wandbQueue.put(logList_key_penalty_lambda)
         """ [CLOSE] HYPERPARAMETER NEGOTIATING """
 
         """ [OPEN] TRAIN """

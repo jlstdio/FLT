@@ -20,16 +20,18 @@ class WandbClient(Process):
         # Define basic metrics
         wandb_run.define_metric("custom_step")
         wandb_run.define_metric("time")
+
+        wandb_run.define_metric("server/performance/server round time", step_metric="custom_step")
         wandb_run.define_metric("server/performance/server aggregated validation loss", step_metric="custom_step")
         wandb_run.define_metric("server/performance/server aggregated accuracy", step_metric="custom_step")
-        wandb_run.define_metric("server/performance - MNIST/server aggregated validation loss - MNIST", step_metric="custom_step")
-        wandb_run.define_metric("server/performance - MNIST/server aggregated accuracy - MNIST", step_metric="custom_step")
-        wandb_run.define_metric("server/performance - SVHN/server aggregated validation loss - SVHN", step_metric="custom_step")
-        wandb_run.define_metric("server/performance - SVHN/server aggregated accuracy - SVHN", step_metric="custom_step")
-        wandb_run.define_metric("server/performance/server round time", step_metric="custom_step")
-        for i in range(basicConfig['numClass']):
-            wandb_run.define_metric(f"server/performance - MNIST/aggregated class {i} accuracy - MNIST",step_metric="custom_step")
-            wandb_run.define_metric(f"server/performance - SVHN/aggregated class {i} accuracy - SVHN", step_metric="custom_step")
+
+        for dataset_name in basicConfig['dataset']:
+            wandb_run.define_metric(f"server/performance - {dataset_name}/server aggregated validation loss - {dataset_name}", step_metric="custom_step")
+            wandb_run.define_metric(f"server/performance - {dataset_name}/server aggregated accuracy - {dataset_name}", step_metric="custom_step")
+
+            for i in range(basicConfig['numClass']):
+                wandb_run.define_metric(f"server/performance - {dataset_name}/aggregated class {i} accuracy - {dataset_name}",step_metric="custom_step")
+                wandb_run.define_metric(f"server/performance - {dataset_name}/aggregated class {i} accuracy - {dataset_name}", step_metric="custom_step")
 
         # Define client-specific metrics
         for i in range(num_clients):
@@ -44,12 +46,15 @@ class WandbClient(Process):
             wandb_run.define_metric(f"client/efficiency/waitingTime/client{i} waiting time", step_metric="custom_step")
             wandb_run.define_metric(f"client/metadata/learningRate-origin/client{i} origin lr", step_metric="custom_step")
             wandb_run.define_metric(f"client/metadata/learningRate-adjusted/client{i} adjusted lr", step_metric="custom_step")
+            wandb_run.define_metric(f"client/metadata/penalty_reg/client{i} reg", step_metric="custom_step")
             wandb_run.define_metric(f"client/metadata/temperature/client{i} T", step_metric="custom_step")
             wandb_run.define_metric(f"client/metadata/epoch/client{i} epoch", step_metric="custom_step")
             wandb_run.define_metric(f"client/metadata/datasize/client{i} dataSize", step_metric="custom_step")
             wandb_run.define_metric(f"client/metadata/batchsize/client{i} batchSize", step_metric="custom_step")
 
         # Define client type-specific metrics
+        wandb_run.define_metric(f"clientType/performance/validation/loss/client type all validation accuracy", step_metric="custom_step")
+        wandb_run.define_metric(f"clientType/performance/pre-validation/loss/client type all validation accuracy", step_metric="custom_step")
         for type_num in range(len(clientConfig)):
             wandb_run.define_metric(f"clientType/performance/pre-validation/loss/client type{type_num} validation loss", step_metric="custom_step")
             wandb_run.define_metric(f"clientType/performance/pre-validation/accuracy/client type{type_num} validation accuracy", step_metric="custom_step")
@@ -62,6 +67,7 @@ class WandbClient(Process):
         self.wandb_run = wandb.init(project=self.config['basicInfo']['projectName'],
                                     name=self.config['basicInfo']['testName'],
                                     tags=self.config['basicInfo']['tags'],
+                                    group=self.config['basicInfo']['groupName'],
                                     config=self.config, reinit=True)
         self.register_client_metrics(self.wandb_run)
         print('Wandb client online')
