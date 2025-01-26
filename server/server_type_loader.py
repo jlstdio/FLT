@@ -17,6 +17,30 @@ def server_type_loader(basicConfig, serverConfig, reservedRootModel, cudaId, cur
         from server.fedOptimizer.fedAvg import fedAvg
         flModel = fedAvg(reservedRootModel, cudaId)
 
+    elif basicConfig['aggregate_mode'] == 'fed_cka' or basicConfig['aggregate_mode'] == 'cka':
+        from server.fedOptimizer.fedAvg import fedAvg
+        flModel = fedAvg(reservedRootModel, cudaId)
+
+    elif basicConfig['aggregate_mode'] == 'fed_cosine' or basicConfig['aggregate_mode'] == 'cosine':
+        from server.fedOptimizer.fedAvg import fedAvg
+        flModel = fedAvg(reservedRootModel, cudaId)
+
+    elif basicConfig['aggregate_mode'] == 'fed_pearson' or basicConfig['aggregate_mode'] == 'pearson':
+        from server.fedOptimizer.fedAvg import fedAvg
+        flModel = fedAvg(reservedRootModel, cudaId)
+
+    elif basicConfig['aggregate_mode'] == 'fed_l2' or basicConfig['aggregate_mode'] == 'l2':
+        from server.fedOptimizer.fedAvg import fedAvg
+        flModel = fedAvg(reservedRootModel, cudaId)
+
+    elif basicConfig['aggregate_mode'] == 'fed_l_inf' or basicConfig['aggregate_mode'] == 'l_inf':
+        from server.fedOptimizer.fedAvg import fedAvg
+        flModel = fedAvg(reservedRootModel, cudaId)
+
+    elif basicConfig['aggregate_mode'] == 'fed_em' or basicConfig['aggregate_mode'] == 'em':
+        from server.fedOptimizer.fedAvg import fedAvg
+        flModel = fedAvg(reservedRootModel, cudaId)
+
     elif basicConfig['aggregate_mode'] == 'fedAvg_w_mem':
         from server.fedOptimizer.fedAvg_w_memorization import fedAvg_w_mem
 
@@ -34,10 +58,16 @@ def server_type_loader(basicConfig, serverConfig, reservedRootModel, cudaId, cur
         flModel = fedAvg_w_mem(reservedRootModel, cudaId, additional_info_dict)
     elif basicConfig['aggregate_mode'] == 'fisher_client':
         from server.fedOptimizer.fedCurv_fisher_calc_client import fedCurv_fisher_calc_client
-        flModel = fedCurv_fisher_calc_client(reservedRootModel, cudaId, None)
 
-    elif basicConfig['aggregate_mode'] == 'fedWeightedAvg_fisher':
-        from server.fedOptimizer.fedWeightedAvg_fisher import fedWeighedAvg_fisher
+        additional_info_dict = {
+            'curRound': currentRound.value,
+            'update_fisher_every': serverConfig['update_cluster_every']
+        }
+
+        flModel = fedCurv_fisher_calc_client(reservedRootModel, cudaId, additional_info_dict)
+
+    elif basicConfig['aggregate_mode'] == 'weighted_fed_avg_param_diff':
+        from server.fedOptimizer.weighed_fed_avg_param_diff import weighed_fed_avg_param_diff
 
         additional_info_dict = {
             'costFunc': serverConfig['costFunc'],
@@ -45,14 +75,26 @@ def server_type_loader(basicConfig, serverConfig, reservedRootModel, cudaId, cur
             'numClass': basicConfig['numClass']
         }
 
-        flModel = fedWeighedAvg_fisher(reservedRootModel, cudaId, additional_info_dict)
+        flModel = weighed_fed_avg_param_diff(reservedRootModel, cudaId, additional_info_dict)
+    elif basicConfig['aggregate_mode'] == 'weighted_fed_avg_fisher':
+        from server.fedOptimizer.weighed_fed_avg_fisher import weighed_fed_avg_fisher
+
+        additional_info_dict = {
+            'costFunc': serverConfig['costFunc'],
+            'dataset': copy.deepcopy(examinDataset),
+            'numClass': basicConfig['numClass']
+        }
+
+        flModel = weighed_fed_avg_fisher(reservedRootModel, cudaId, additional_info_dict)
     elif basicConfig['aggregate_mode'] == 'fisher_server':
         from server.fedOptimizer.fedCurv_fisher_calc_server import fedCurv_fisher_calc_server
 
         additional_info_dict = {
             'costFunc': serverConfig['costFunc'],
             'dataset': copy.deepcopy(examinDataset),
-            'numClass': basicConfig['numClass']
+            'numClass': basicConfig['numClass'],
+            'curRound': currentRound.value,
+            'update_fisher_every': serverConfig['update_cluster_every']
         }
         flModel = fedCurv_fisher_calc_server(reservedRootModel, cudaId, additional_info_dict)
     elif basicConfig['aggregate_mode'] == 'calm_fisher':

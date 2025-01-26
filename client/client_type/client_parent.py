@@ -75,7 +75,7 @@ class client_parent(Process):
             testName = basicConfig['testName']
             self.aggregatedFisherPath = self.basicConfig['aggregateFisherPath'] + f'/rootFisher-{testName}.pth'
 
-            if self.basicConfig['aggregate_mode'] == 'fedCurv_fisher_client':
+            if self.basicConfig['aggregate_mode'] == 'fisher_client':
                 self.clientFisherPath = self.basicConfig['aggregateFisherPath'] + f'/client_{self.client_internalId}_fisher.pth'
 
         self.clientProfile = None
@@ -136,7 +136,6 @@ class client_parent(Process):
             self.val_loader = DataLoader(val_dataset, batch_size=self.clientProfile['clientMetadata']['batchSize'], shuffle=True)
         except Exception as e:
             print(f'client{self.client_internalId} - {e}')
-
 
     def logs_before_train(self):
         lr_origin = self.clientProfile['clientMetadata']['lr']

@@ -33,6 +33,22 @@ class client_fisher(client_parent):
                  wandbQueue)
 
     def train(self, epochs=10):
+
+        if self.config['update_fisher_every'] == -1:
+            self.config['update_fisher_every'] = 1
+
+        fisher_update_now = False
+        if int(self.serverRound.value) % self.config['update_fisher_every'] == 0:
+            fisher_update_now = True
+
+        if fisher_update_now:
+            print('CLIENT: this round we are going to update the fisher info')
+        else:
+            if int(self.serverRound.value) < self.config['update_fisher_every']:
+                print('CLIENT: not using fisher info yet')
+            else:
+                print('CLIENT: update using previous fisher info')
+
         lr_origin = self.clientProfile['clientMetadata']['lr']
         lr = lr_origin
 
@@ -78,7 +94,7 @@ class client_fisher(client_parent):
 
                 clip_implement(self.config['costFunc'], self.model, self.config['normClip'])
 
-                if self.basicConfig['aggregate_mode'] == 'fedCurv_fisher_server':
+                if self.basicConfig['aggregate_mode'] == 'fisher_server':
                     torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=self.config['normClip'])
 
                 self.optimizer.step()
@@ -99,7 +115,7 @@ class client_fisher(client_parent):
         # ##### ##############################
 
         # fisher 정보 계산 ####
-        if self.basicConfig['aggregate_mode'] == 'fed_fisher_client':
+        if self.basicConfig['aggregate_mode'] == 'fisher_client' and fisher_update_now:
             clientFisherPath = self.basicConfig['aggregateFisherPath'] + f'/client_{self.client_internalId}_fisher.pth'
             fisher = compute_fisher(self.model, self.train_loader, self.config['costFunc'], self.device)
             save_fisher(fisher, clientFisherPath)

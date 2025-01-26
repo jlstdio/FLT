@@ -40,7 +40,10 @@ class fedCurv_fisher_calc_server(fedOptParent):
 
         data_loader = loadData(dataset, costFunc, numClass)
 
-        fisher = compute_fisher(self.resultRootModel, data_loader, costFunc, self.device)
+        fisher = None
+        if self.additionalInfo['curRound'] % self.additionalInfo['update_fisher_every'] == 0:
+            print('Fisher Server: fisher info is updated')
+            fisher = compute_fisher(self.resultRootModel, data_loader, costFunc, self.device)
 
         return self.resultRootModel, fisher
 

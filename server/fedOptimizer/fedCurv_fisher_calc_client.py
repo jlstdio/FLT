@@ -15,10 +15,10 @@ def average_weights(weights: List[Dict[str, torch.Tensor]]) -> Dict[str, torch.T
     new_state_dict = {}
     for key in weights[0].keys():
         stacked = torch.stack([client[key] for client in weights], dim=0)
-        new_state_dict[key] = torch.mean(stacked, dim=0)
+        new_state_dict[key] = torch.mean(stacked.float(), dim=0)
 
     return new_state_dict
-
+[]
 
 def average_fishers(fishers, params):
     aggregated_fisher = {name: torch.zeros_like(param) for name, param in params.items()}
@@ -41,9 +41,13 @@ class fedCurv_fisher_calc_client(fedOptParent):
         # Update server model based on clients models
         updated_weights = average_weights(self.clientsModels)
         self.resultRootModel.load_state_dict(updated_weights)
+        updated_fishers = None
 
         global_params = {name: param.data.clone() for name, param in self.rootModelStatic.named_parameters()}
-        updated_fishers = average_fishers(self.clientsFisher, global_params)
+
+        if self.additionalInfo['curRound'] % self.additionalInfo['update_fisher_every'] == 0:
+            print('Fisher Client: fisher info updated')
+            updated_fishers = average_fishers(self.clientsFisher, global_params)
 
         return self.resultRootModel, updated_fishers
 
