@@ -3,18 +3,6 @@ import torch
 import copy
 from server.fedOptimizer.fedOptParent import fedOptParent
 
-'''
-def average_weights(weights: List[Dict[str, torch.Tensor]]) -> Dict[str, torch.Tensor]:
-    weights_avg = copy.deepcopy(weights[0])
-
-    for key in weights_avg.keys():
-        for i in range(1, len(weights)):
-            weights_avg[key] += weights[i][key]
-        weights_avg[key] = torch.div(weights_avg[key], len(weights))
-
-    return weights_avg
-'''
-
 
 def average_weights(weights: List[Dict[str, torch.Tensor]]) -> Dict[str, torch.Tensor]:
     if not weights:
@@ -23,7 +11,7 @@ def average_weights(weights: List[Dict[str, torch.Tensor]]) -> Dict[str, torch.T
     new_state_dict = {}
     for key in weights[0].keys():
         stacked = torch.stack([client[key] for client in weights], dim=0)
-        new_state_dict[key] = torch.mean(stacked, dim=0)
+        new_state_dict[key] = torch.mean(stacked.float(), dim=0)
 
     return new_state_dict
 
@@ -44,9 +32,3 @@ class fedAvg(fedOptParent):
         '''
 
         return self.resultRootModel
-
-'''
-unpacker = fedAvg()
-unpacker.loadPth('../pth/gesture_transformer_epoch233.pth')
-unpacker.summary()
-'''

@@ -387,7 +387,7 @@ class Server(Process):
 
         dltAllFiles(self.basicConfig['receivedProfilePath'])
 
-    def update_picked_clients(self, pickedClients):
+    def update_picked_clients(self, pickedClients, numCluster):
         for session_id, client_id in enumerate(pickedClients):
             self.sessionId[client_id] = session_id
             self.status[client_id] = False
@@ -403,16 +403,17 @@ class Server(Process):
 
             # self.round가 1일 때 컬럼 이름 추가
             if self.currentRound.value == 0:
-                writer.writerow(["Round", "PickedList"])
+                writer.writerow(["Round", "PickedList", "pickedCluster"])
 
             # pickedClientsList를 쉼표로 구분된 문자열로 저장
-            row_to_write = [self.currentRound.value + 1, ",".join(map(str, self.pickedClientsList))]
+            row_to_write = [self.currentRound.value + 1, ",".join(map(str, self.pickedClientsList)), f",{numCluster}"]
             writer.writerow(row_to_write)
 
         print(f"Picked Clients for this round: {pickedClients}")
 
     def pick_clients(self):
         pickedClients = []
+        numCluster = 0
 
         if self.serverConfig['pickMode'] == 'random':
             from server.picking_clients.random_pick_clients import random_pick_clients
@@ -437,7 +438,7 @@ class Server(Process):
 
             initial_data = {"none": None}
             pickedClients = pickey_pick_clients(initial_data, self.rng)
-        elif self.serverConfig['pickMode'] == 'clustered':
+        elif self.serverConfig['pickMode'] == 'clustered_sequential' or self.serverConfig['pickMode'] == 'clustered':
             from server.picking_clients.clustered_pick_clients import clustered_pick_clients
 
             participantInfo = self.basicConfig['participantsInfo']
@@ -448,6 +449,7 @@ class Server(Process):
                 type_ratio = float(typeInfo.split(':')[1])
                 next_idx = past_idx + int(len(self.clientsList) * type_ratio)
                 cluster_list.append(self.clientsList[past_idx:next_idx])
+                past_idx = next_idx
 
             initial_data = {
                 "clustered_clients_list": cluster_list,
@@ -455,9 +457,30 @@ class Server(Process):
                 "curRound": self.currentRound.value,
                 "initial_cluster": 0
             }
-            pickedClients = clustered_pick_clients(initial_data, self.rng)
+            pickedClients, numCluster = clustered_pick_clients(initial_data, self.rng, self.serverConfig['update_cluster_every'])
 
-        self.update_picked_clients(pickedClients)
+        elif self.serverConfig['pickMode'] == 'clustered_random':
+            from server.picking_clients.clustered_pick_clients import clustered_pick_clients
+
+            participantInfo = self.basicConfig['participantsInfo']
+            past_idx = 0
+            cluster_list = []
+            for typeInfo in participantInfo:
+                type_id = typeInfo.split(':')[0]
+                type_ratio = float(typeInfo.split(':')[1])
+                next_idx = past_idx + int(len(self.clientsList) * type_ratio)
+                cluster_list.append(self.clientsList[past_idx:next_idx])
+                past_idx = next_idx
+
+            initial_data = {
+                "clustered_clients_list": cluster_list,
+                "updateClientsPerRound": self.basicConfig['updateClientsPerRound'],
+                "curRound": self.currentRound.value,
+                "initial_cluster": 0
+            }
+            pickedClients, numCluster = clustered_pick_clients(initial_data, self.rng, self.serverConfig['update_cluster_every'])
+
+        self.update_picked_clients(pickedClients, numCluster)
 
     def run(self):
         event_handler = PTHFileHandler(self)

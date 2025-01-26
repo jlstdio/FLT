@@ -15,6 +15,7 @@ types_info = {
 type_ratio = [0.5, 0.5]
 """
 
+
 def dirichletSplit(dataset_list, classes, total_clients_id_list, configPath, dataset_created_log_path, seed=1234):
     """
     데이터셋을 Dirichlet 분할 방식으로 클라이언트에 할당하고,
