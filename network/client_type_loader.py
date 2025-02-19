@@ -46,6 +46,24 @@ def client_type_loader(pickedClientsList,
                                           scorePath=scorePath,
                                           wandbQueue=wandbQueue))
 
+    elif basicConfig['aggregate_mode'] == 'partial_fed_prox':
+        from client.client_type.client_partial_fedProx import client_partial_fedprox
+
+        for i in pickedClientsList:
+            clients.append(client_partial_fedprox(client_internalId=i,
+                                                  dataset=clientsDatasetDict[i],
+                                                  networkConfig=networkConfig,
+                                                  basicConfig=basicConfig,
+                                                  clientType=typesPerClients[i],
+                                                  config=clientConfig[int(typesPerClients[i])],
+                                                  model=copy.deepcopy(modelToLoad),
+                                                  serverRound=serverRound,
+                                                  flipboard=flipboard,
+                                                  turnFlag=turnFlag,
+                                                  sessionId=sessionId,
+                                                  scorePath=scorePath,
+                                                  wandbQueue=wandbQueue))
+
     elif basicConfig['aggregate_mode'] == 'fisher_server' or basicConfig['aggregate_mode'] == 'fisher_client':
         from client.client_type.client_fisher import client_fisher
 
@@ -159,54 +177,54 @@ def client_type_loader(pickedClientsList,
 
         for i in pickedClientsList:
             clients.append(client_l2(client_internalId=i,
-                                          dataset=clientsDatasetDict[i],
-                                          networkConfig=networkConfig,
-                                          basicConfig=basicConfig,
-                                          clientType=typesPerClients[i],
-                                          config=clientConfig[int(typesPerClients[i])],
-                                          model=copy.deepcopy(modelToLoad),
-                                          serverRound=serverRound,
-                                          flipboard=flipboard,
-                                          turnFlag=turnFlag,
-                                          sessionId=sessionId,
-                                          scorePath=scorePath,
-                                          wandbQueue=wandbQueue))
+                                     dataset=clientsDatasetDict[i],
+                                     networkConfig=networkConfig,
+                                     basicConfig=basicConfig,
+                                     clientType=typesPerClients[i],
+                                     config=clientConfig[int(typesPerClients[i])],
+                                     model=copy.deepcopy(modelToLoad),
+                                     serverRound=serverRound,
+                                     flipboard=flipboard,
+                                     turnFlag=turnFlag,
+                                     sessionId=sessionId,
+                                     scorePath=scorePath,
+                                     wandbQueue=wandbQueue))
 
     elif basicConfig['aggregate_mode'] == 'l_inf' or basicConfig['aggregate_mode'] == 'fed_l_inf':
         from client.client_type.client_l_inf import client_l_inf
 
         for i in pickedClientsList:
             clients.append(client_l_inf(client_internalId=i,
-                                          dataset=clientsDatasetDict[i],
-                                          networkConfig=networkConfig,
-                                          basicConfig=basicConfig,
-                                          clientType=typesPerClients[i],
-                                          config=clientConfig[int(typesPerClients[i])],
-                                          model=copy.deepcopy(modelToLoad),
-                                          serverRound=serverRound,
-                                          flipboard=flipboard,
-                                          turnFlag=turnFlag,
-                                          sessionId=sessionId,
-                                          scorePath=scorePath,
-                                          wandbQueue=wandbQueue))
+                                        dataset=clientsDatasetDict[i],
+                                        networkConfig=networkConfig,
+                                        basicConfig=basicConfig,
+                                        clientType=typesPerClients[i],
+                                        config=clientConfig[int(typesPerClients[i])],
+                                        model=copy.deepcopy(modelToLoad),
+                                        serverRound=serverRound,
+                                        flipboard=flipboard,
+                                        turnFlag=turnFlag,
+                                        sessionId=sessionId,
+                                        scorePath=scorePath,
+                                        wandbQueue=wandbQueue))
 
     elif basicConfig['aggregate_mode'] == 'em' or basicConfig['aggregate_mode'] == 'fed_em':
         from client.client_type.client_em import client_em
 
         for i in pickedClientsList:
             clients.append(client_em(client_internalId=i,
-                                          dataset=clientsDatasetDict[i],
-                                          networkConfig=networkConfig,
-                                          basicConfig=basicConfig,
-                                          clientType=typesPerClients[i],
-                                          config=clientConfig[int(typesPerClients[i])],
-                                          model=copy.deepcopy(modelToLoad),
-                                          serverRound=serverRound,
-                                          flipboard=flipboard,
-                                          turnFlag=turnFlag,
-                                          sessionId=sessionId,
-                                          scorePath=scorePath,
-                                          wandbQueue=wandbQueue))
+                                     dataset=clientsDatasetDict[i],
+                                     networkConfig=networkConfig,
+                                     basicConfig=basicConfig,
+                                     clientType=typesPerClients[i],
+                                     config=clientConfig[int(typesPerClients[i])],
+                                     model=copy.deepcopy(modelToLoad),
+                                     serverRound=serverRound,
+                                     flipboard=flipboard,
+                                     turnFlag=turnFlag,
+                                     sessionId=sessionId,
+                                     scorePath=scorePath,
+                                     wandbQueue=wandbQueue))
 
     else:
         return None

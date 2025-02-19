@@ -13,8 +13,12 @@ from util.wandbClient import WandbClient
 
 
 def runner(networkConfigPath, dataConfigPath):
+
     with open(networkConfigPath, 'r') as file:
         config = json.load(file)
+
+    with open(dataConfigPath, 'r') as file:
+        data_config = json.load(file)
 
     clientConfig = config['clients']
     serverConfig = config['server']
@@ -63,40 +67,25 @@ def runner(networkConfigPath, dataConfigPath):
     mnist_clients_ratio = 0.5
 
     dataset_list = basicConfig['dataset']
-    clientDataset_cifar10_original, serverTestDataset_cifar10_original, classes_cifar10 = select_dataset(dataset_name=dataset_list[0],
-                                                                                                         client_subset_start_point=0.0,
-                                                                                                         client_subset_ratio=0.25,
-                                                                                                         server_subset_ratio=1.0)
+    clientDataset_list = []
+    serverTestDataset_list = []
+    client_subset_start_point = 0.0
+    dataset_classes = None
 
-    clientDataset_cifar10_jittered, serverTestDataset_cifar10_jittered, _ = select_dataset(dataset_name=dataset_list[1],
-                                                                                           client_subset_start_point=0.25,
-                                                                                           client_subset_ratio=0.25,
-                                                                                           server_subset_ratio=1.0)
+    for idx, (dataset_name) in enumerate(dataset_list):
+        client_subset_ratio = data_config['type_ratio'][idx]
+        client_dataset, server_TestDataset, dataset_classes = select_dataset(dataset_name=dataset_name,
+                                                                             client_subset_start_point=client_subset_start_point,
+                                                                             client_subset_ratio=client_subset_ratio,
+                                                                             server_subset_ratio=1.0)
 
-    clientDataset_cifar10_rotated, serverTestDataset_cifar10_rotated, _ = select_dataset(dataset_name=dataset_list[2],
-                                                                                         client_subset_start_point=0.5,
-                                                                                         client_subset_ratio=0.25,
-                                                                                         server_subset_ratio=1.0)
-
-    clientDataset_cifar10_noised, serverTestDataset_cifar10_noised, _ = select_dataset(dataset_name=dataset_list[3],
-                                                                                       client_subset_start_point=0.75,
-                                                                                       client_subset_ratio=0.25,
-                                                                                       server_subset_ratio=1.0)
-
-    serverTestDataset_list = [serverTestDataset_cifar10_original,
-                              serverTestDataset_cifar10_jittered,
-                              serverTestDataset_cifar10_rotated,
-                              serverTestDataset_cifar10_noised]
-
-    classes = classes_cifar10
+        client_subset_start_point += client_subset_ratio
+        clientDataset_list.append(client_dataset)
+        serverTestDataset_list.append(server_TestDataset)
 
     clientsDatasetDict = create_dataset_dict(dataset_distribution_name=basicConfig['dataset_distribution'],
-                                             clientDataset_list=[clientDataset_cifar10_original,
-                                                                 clientDataset_cifar10_jittered,
-                                                                 clientDataset_cifar10_rotated,
-                                                                 clientDataset_cifar10_noised],
-                                             classes=classes,
-                                             batchSize=0,
+                                             clientDataset_list=clientDataset_list,
+                                             classes=dataset_classes,
                                              clients_id_list=clients_id_list,
                                              dataConfigPath=dataConfigPath,
                                              dataset_created_log_path=dataset_created_log_path,
@@ -106,7 +95,7 @@ def runner(networkConfigPath, dataConfigPath):
     print('[TEST] combined dict length: ' + str(len(clientsDatasetDict)))
 
     distributionSavePath = f'{resultRootPath}/clientsDataset {testName} - {int(round(time.time()))}'
-    totalDistributionSet = showDistribution(clientsDatasetDict, classes, distributionSavePath)
+    totalDistributionSet = showDistribution(clientsDatasetDict, dataset_classes, distributionSavePath)
     # ##################################################################
 
     ######################
@@ -201,9 +190,11 @@ if __name__ == "__main__":
     dataConfigRoot = './config/datasetConfig'
 
     networkConfig_PathList = [
-        f'{networkConfigRoot}/domain_shift_clustered/config_fisher_client_5_layer_MD_mixed_CP_3R.json']
+        f'{networkConfigRoot}/retrial_w_easier_dataset/fed_cka/config_fed_cka_3-1_3_layer_MD_RP_7.json',
+        f'{networkConfigRoot}/retrial_w_easier_dataset/fed_cka/config_fed_cka_3-1_3_layer_MD_RP_8.json']
 
-    dataConfig_PathList = [f'{dataConfigRoot}/dataConfig_dirichlet_mixed_type.json']
+    dataConfig_PathList = [f'{dataConfigRoot}/dirichlet_by_num_of_types/dataConfig_dirichlet_6types.json',
+                           f'{dataConfigRoot}/dirichlet_by_num_of_types/dataConfig_dirichlet_10types.json']
 
     for network_configPath, data_configPath in zip(networkConfig_PathList, dataConfig_PathList):
         print(f'running with {network_configPath} | {data_configPath}')

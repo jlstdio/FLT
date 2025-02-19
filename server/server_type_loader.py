@@ -13,7 +13,7 @@ def server_type_loader(basicConfig, serverConfig, reservedRootModel, cudaId, cur
         from server.fedOptimizer.fedAvg import fedAvg
         flModel = fedAvg(reservedRootModel, cudaId)
 
-    elif basicConfig['aggregate_mode'] == 'fed_prox':
+    elif basicConfig['aggregate_mode'] == 'fed_prox' or basicConfig['aggregate_mode'] == 'partial_fed_prox':
         from server.fedOptimizer.fedAvg import fedAvg
         flModel = fedAvg(reservedRootModel, cudaId)
 

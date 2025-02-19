@@ -13,8 +13,12 @@ from util.wandbClient import WandbClient
 
 
 def runner(networkConfigPath, dataConfigPath):
+
     with open(networkConfigPath, 'r') as file:
         config = json.load(file)
+
+    with open(dataConfigPath, 'r') as file:
+        data_config = json.load(file)
 
     clientConfig = config['clients']
     serverConfig = config['server']
@@ -63,88 +67,25 @@ def runner(networkConfigPath, dataConfigPath):
     mnist_clients_ratio = 0.5
 
     dataset_list = basicConfig['dataset']
-    clientDataset_cifar10_jg, serverTestDataset_cifar10_jg, classes_cifar10 = select_dataset(dataset_name=dataset_list[0],
-                                                                                                         client_subset_start_point=0.0,
-                                                                                                         client_subset_ratio=0.1,
-                                                                                                         server_subset_ratio=1.0)
+    clientDataset_list = []
+    serverTestDataset_list = []
+    client_subset_start_point = 0.0
+    dataset_classes = None
 
-    clientDataset_cifar10_jo, serverTestDataset_cifar10_jo, _ = select_dataset(dataset_name=dataset_list[1],
-                                                                                           client_subset_start_point=0.1,
-                                                                                           client_subset_ratio=0.1,
-                                                                                           server_subset_ratio=1.0)
+    for idx, (dataset_name) in enumerate(dataset_list):
+        client_subset_ratio = data_config['type_ratio'][idx]
+        client_dataset, server_TestDataset, dataset_classes = select_dataset(dataset_name=dataset_name,
+                                                                             client_subset_start_point=client_subset_start_point,
+                                                                             client_subset_ratio=client_subset_ratio,
+                                                                             server_subset_ratio=1.0)
 
-    clientDataset_cifar10_jp, serverTestDataset_cifar10_jp, _ = select_dataset(dataset_name=dataset_list[2],
-                                                                                         client_subset_start_point=0.2,
-                                                                                         client_subset_ratio=0.1,
-                                                                                         server_subset_ratio=1.0)
-
-    clientDataset_cifar10_r1, serverTestDataset_cifar10_r1, _ = select_dataset(dataset_name=dataset_list[3],
-                                                                                       client_subset_start_point=0.3,
-                                                                                       client_subset_ratio=0.1,
-                                                                                       server_subset_ratio=1.0)
-
-    clientDataset_cifar10_r2, serverTestDataset_cifar10_r2, _ = select_dataset(dataset_name=dataset_list[4],
-                                                                               client_subset_start_point=0.4,
-                                                                               client_subset_ratio=0.1,
-                                                                               server_subset_ratio=1.0)
-
-    clientDataset_cifar10_r3, serverTestDataset_cifar10_r3, _ = select_dataset(dataset_name=dataset_list[5],
-                                                                               client_subset_start_point=0.5,
-                                                                               client_subset_ratio=0.1,
-                                                                               server_subset_ratio=1.0)
-
-    clientDataset_cifar10_r4, serverTestDataset_cifar10_r4, _ = select_dataset(dataset_name=dataset_list[6],
-                                                                               client_subset_start_point=0.6,
-                                                                               client_subset_ratio=0.1,
-                                                                               server_subset_ratio=1.0)
-
-    clientDataset_cifar10_lp, serverTestDataset_cifar10_lp, _ = select_dataset(dataset_name=dataset_list[7],
-                                                                               client_subset_start_point=0.7,
-                                                                               client_subset_ratio=0.1,
-                                                                               server_subset_ratio=1.0)
-
-    clientDataset_cifar10_bp, serverTestDataset_cifar10_bp, _ = select_dataset(dataset_name=dataset_list[8],
-                                                                               client_subset_start_point=0.8,
-                                                                               client_subset_ratio=0.1,
-                                                                               server_subset_ratio=1.0)
-
-    clientDataset_cifar10_bs, serverTestDataset_cifar10_bs, _ = select_dataset(dataset_name=dataset_list[9],
-                                                                               client_subset_start_point=0.9,
-                                                                               client_subset_ratio=0.1,
-                                                                               server_subset_ratio=1.0)
-
-    '''
-    "dataset": ["cifar-10_jg", "cifar-10_jo", "cifar-10_jp",
-                "cifar-10_r1", "cifar-10_r2", "cifar-10_r3", "cifar-10_r4",
-                "cifar-10_lp", "cifar-10_bp", "cifar-10_bs"],
-    '''
-
-    serverTestDataset_list = [serverTestDataset_cifar10_jg,
-                              serverTestDataset_cifar10_jo,
-                              serverTestDataset_cifar10_jp,
-                              serverTestDataset_cifar10_r1,
-                              serverTestDataset_cifar10_r2,
-                              serverTestDataset_cifar10_r3,
-                              serverTestDataset_cifar10_r4,
-                              serverTestDataset_cifar10_lp,
-                              serverTestDataset_cifar10_bp,
-                              serverTestDataset_cifar10_bs]
-
-    classes = classes_cifar10
+        client_subset_start_point += client_subset_ratio
+        clientDataset_list.append(client_dataset)
+        serverTestDataset_list.append(server_TestDataset)
 
     clientsDatasetDict = create_dataset_dict(dataset_distribution_name=basicConfig['dataset_distribution'],
-                                             clientDataset_list=[clientDataset_cifar10_jg,
-                                                                 clientDataset_cifar10_jo,
-                                                                 clientDataset_cifar10_jp,
-                                                                 clientDataset_cifar10_r1,
-                                                                 clientDataset_cifar10_r2,
-                                                                 clientDataset_cifar10_r3,
-                                                                 clientDataset_cifar10_r4,
-                                                                 clientDataset_cifar10_lp,
-                                                                 clientDataset_cifar10_bp,
-                                                                 clientDataset_cifar10_bs],
-                                             classes=classes,
-                                             batchSize=0,
+                                             clientDataset_list=clientDataset_list,
+                                             classes=dataset_classes,
                                              clients_id_list=clients_id_list,
                                              dataConfigPath=dataConfigPath,
                                              dataset_created_log_path=dataset_created_log_path,
@@ -154,7 +95,7 @@ def runner(networkConfigPath, dataConfigPath):
     print('[TEST] combined dict length: ' + str(len(clientsDatasetDict)))
 
     distributionSavePath = f'{resultRootPath}/clientsDataset {testName} - {int(round(time.time()))}'
-    totalDistributionSet = showDistribution(clientsDatasetDict, classes, distributionSavePath)
+    totalDistributionSet = showDistribution(clientsDatasetDict, dataset_classes, distributionSavePath)
     # ##################################################################
 
     ######################
@@ -248,13 +189,13 @@ if __name__ == "__main__":
     networkConfigRoot = './config/networkConfig'
     dataConfigRoot = './config/datasetConfig'
 
-    networkConfig_PathList = [f'{networkConfigRoot}/feature_space_guiding/config_fedavg_3_layer_cka_MD_RP_3.json',
-                              f'{networkConfigRoot}/feature_space_guiding/config_fedavg_3_layer_cka_MD_RP_4.json',
-                              f'{networkConfigRoot}/feature_space_guiding/config_fedavg_3_layer_cka_MD_RP_5.json']
+    networkConfig_PathList = [f'{networkConfigRoot}/retrial_w_easier_dataset/fed_avg/config_fed_avg_3_layer_MD_RP_6.json',
+                              f'{networkConfigRoot}/retrial_w_easier_dataset/fed_avg/config_fed_avg_3_layer_MD_RP_7.json',
+                              f'{networkConfigRoot}/retrial_w_easier_dataset/fed_avg/config_fed_avg_3_layer_MD_RP_8.json']
 
-    dataConfig_PathList = [f'{dataConfigRoot}/dataConfig_dirichlet_prelim_not_mixed_type.json',
-                           f'{dataConfigRoot}/dataConfig_dirichlet_prelim_not_mixed_type.json',
-                           f'{dataConfigRoot}/dataConfig_dirichlet_prelim_not_mixed_type.json']
+    dataConfig_PathList = [f'{dataConfigRoot}/dirichlet_by_num_of_types/dataConfig_dirichlet_8types.json',
+                           f'{dataConfigRoot}/dirichlet_by_num_of_types/dataConfig_dirichlet_6types.json',
+                           f'{dataConfigRoot}/dirichlet_by_num_of_types/dataConfig_dirichlet_10types.json']
 
     for network_configPath, data_configPath in zip(networkConfig_PathList, dataConfig_PathList):
         print(f'running with {network_configPath} | {data_configPath}')

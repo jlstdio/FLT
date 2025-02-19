@@ -83,50 +83,29 @@ class client_l_inf(client_parent):
                 targets = target_type_convert(self.config['costFunc'], targets)
                 targets = targets.to(self.device)
 
-                # -----------------------------------------------------
-                # [1] 첫 번째 업데이트: Classification (전체 레이어)
-                # -----------------------------------------------------
-                # 모든 레이어 unfreeze
-                for param in self.model.parameters():
-                    param.requires_grad = True
-
                 self.optimizer.zero_grad()
 
                 # 분류 로스
                 outputs = self.model(inputs)
                 cls_loss = self.criterion(outputs, targets)
 
+                if len(self.target_layers) > 0 and penalty_lambda > 0:
+                    l_inf_dist = l_inf_distance(self.model, prox_model, self.target_layers)
+
+                    if l_inf_dist > 0:
+                        reg_loss = penalty_lambda * l_inf_dist
+                        cls_loss += reg_loss
+
                 cls_loss.backward()
-                clip_implement(self.config['costFunc'], self.model, self.config['normClip'])
+
+                if self.config['normClip'] > 0:
+                    torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=self.config['normClip'])
+
                 self.optimizer.step()
 
                 running_loss += cls_loss.item()
                 all_targets.extend(targets.detach().cpu().numpy())
                 all_outputs.extend(outputs.detach().cpu().numpy())
-
-                # -----------------------------------------------------
-                # [2] 두 번째 업데이트: L-inf Reg (지정 레이어만)
-                # -----------------------------------------------------
-                if len(self.target_layers) > 0 and penalty_lambda > 0:
-                    # Freeze: target_layers에 해당하지 않는 파라미터는 학습 X
-                    for name, param in self.model.named_parameters():
-                        if any(t_layer in name for t_layer in self.target_layers):
-                            param.requires_grad = True
-                        else:
-                            param.requires_grad = False
-
-                    self.optimizer.zero_grad()
-
-                    # L-inf distance
-                    l_inf_dist = l_inf_distance(self.model, prox_model, self.target_layers)
-
-                    if l_inf_dist > 0:
-                        # penalty_lambda * dist
-                        reg_loss = penalty_lambda * l_inf_dist
-                        reg_loss.backward()
-
-                        clip_implement(self.config['costFunc'], self.model, self.config['normClip'])
-                        self.optimizer.step()
 
             # 한 epoch 끝난 후 평균 loss
             avg_loss = running_loss / len(self.train_loader)

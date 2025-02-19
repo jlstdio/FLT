@@ -53,56 +53,37 @@ class client_l2(client_parent):
                 targets = target_type_convert(self.config['costFunc'], targets)
                 targets = targets.to(self.device)
 
-                # -----------------------------------------------------
-                # [A] 첫 번째 업데이트: Classification Step (전체 레이어)
-                # -----------------------------------------------------
-                for param in self.model.parameters():
-                    param.requires_grad = True  # 모든 레이어 unfreeze
-
                 self.optimizer.zero_grad()
 
                 # 1) Forward + classification loss
                 outputs = self.model(inputs)
                 cls_loss = self.criterion(outputs, targets)
 
+                if len(self.target_layers) > 0 and penalty_lambda > 0:
+                    # 2) L2 거리 계산 (지정된 레이어만)
+                    l2_dist = 0.0
+                    for (name_local, w_local), (name_global, w_global) in zip(
+                            self.model.named_parameters(),
+                            global_model.named_parameters()
+                    ):
+                        if any(t_layer in name_local for t_layer in self.target_layers):
+                            l2_dist += torch.sum((w_local - w_global) ** 2)
+
+                    if l2_dist > 0:
+                        l2_loss = (penalty_lambda / 2.0) * l2_dist
+                        cls_loss += l2_loss
+
                 # 2) Backprop
                 cls_loss.backward()
-                clip_implement(self.config['costFunc'], self.model, self.config['normClip'])
+
+                if self.config['normClip'] > 0:
+                    torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=self.config['normClip'])
+
                 self.optimizer.step()
 
                 running_loss += cls_loss.item()
                 all_targets.extend(targets.detach().cpu().numpy())
                 all_outputs.extend(outputs.detach().cpu().numpy())
-
-                # -----------------------------------------------------
-                # [B] 두 번째 업데이트: Partial L2 Step (특정 레이어만)
-                # -----------------------------------------------------
-                if len(self.target_layers) > 0 and penalty_lambda > 0:
-                    # 1) Freeze: target_layers가 아닌 레이어는 grad X
-                    for name, param in self.model.named_parameters():
-                        if any(t_sub in name for t_sub in self.target_layers):
-                            param.requires_grad = True
-                        else:
-                            param.requires_grad = False
-
-                    self.optimizer.zero_grad()
-
-                    # 2) L2 거리 계산 (지정된 레이어만)
-                    l2_dist = 0.0
-                    for (name_local, w_local), (name_global, w_global) in zip(
-                        self.model.named_parameters(),
-                        global_model.named_parameters()
-                    ):
-                        if any(t_layer in name_local for t_layer in self.target_layers):
-                            l2_dist += torch.sum((w_local - w_global) ** 2)
-
-                    # 3) 로스: penalty_lambda * (l2_dist / 2)
-                    #    (스케일은 필요에 따라 조정 가능)
-                    if l2_dist > 0:
-                        l2_loss = (penalty_lambda / 2.0) * l2_dist
-                        l2_loss.backward()
-                        clip_implement(self.config['costFunc'], self.model, self.config['normClip'])
-                        self.optimizer.step()
 
             # 에폭 종료 후 평균 Loss
             avg_loss = running_loss / len(self.train_loader)

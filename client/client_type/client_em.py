@@ -98,17 +98,21 @@ class client_em(client_parent):
                     logits = self.model(inputs)
                     soft_probs = F.softmax(logits, dim=-1)
 
-                # (B) M-step: soft label을 정답 삼아 학습
-                for param in self.model.parameters():
-                    param.requires_grad = True  # 전체 레이어 업데이트 가능
-
                 self.optimizer.zero_grad()
                 new_logits = self.model(inputs)
-
-                # soft label loss
                 cls_loss = soft_label_loss(new_logits, soft_probs)
+
+                if len(self.target_layers) > 0 and penalty_lambda > 0:
+                    l2_dist = partial_l2_distance(self.model, prox_model, self.target_layers)
+                    if l2_dist > 0:
+                        l2_loss = (penalty_lambda / 2.0) * l2_dist
+                        cls_loss += l2_loss
+
                 cls_loss.backward()
-                clip_implement(self.config['costFunc'], self.model, self.config['normClip'])
+
+                if self.config['normClip'] > 0:
+                    torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=self.config['normClip'])
+
                 self.optimizer.step()
 
                 running_loss += cls_loss.item()
@@ -116,32 +120,6 @@ class client_em(client_parent):
                 # 기록용
                 all_targets.extend(targets.detach().cpu().numpy())
                 all_outputs.extend(new_logits.detach().cpu().numpy())
-
-                # ---------------------------------------------------
-                # (2) Partial L2 Update (두 번째 업데이트)
-                #     특정 레이어만 업데이트
-                # ---------------------------------------------------
-                # target_layers가 설정되어 있고, penalty_lambda > 0 이면 수행
-                if len(self.target_layers) > 0 and penalty_lambda > 0:
-                    # Freeze: target_layers가 아닌 레이어는 grad X
-                    for name, param in self.model.named_parameters():
-                        if any(t_sub in name for t_sub in self.target_layers):
-                            param.requires_grad = True
-                        else:
-                            param.requires_grad = False
-
-                    self.optimizer.zero_grad()
-
-                    # partial L2 distance 계산
-                    l2_dist = partial_l2_distance(self.model, prox_model, self.target_layers)
-                    if l2_dist > 0:
-                        # 예시: (penalty_lambda / 2) * l2_dist
-                        # 필요에 따라 스케일 조정 가능
-                        l2_loss = (penalty_lambda / 2.0) * l2_dist
-                        l2_loss.backward()
-
-                        clip_implement(self.config['costFunc'], self.model, self.config['normClip'])
-                        self.optimizer.step()
 
             # 에폭별 평균 Loss (여기서는 EM classification 손실만 집계)
             avg_loss = running_loss / len(self.train_loader)

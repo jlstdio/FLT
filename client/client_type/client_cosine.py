@@ -70,9 +70,6 @@ class client_cosine(client_parent):
             cos_sim = F.cosine_similarity(vecA, vecB, dim=0)
             return cos_sim
 
-        # ----------------------------------------
-        # [2] Train Loop (두 번 업데이트)
-        # ----------------------------------------
         self.model.train()
         for epoch in range(epochs):
             running_loss = 0.0
@@ -82,49 +79,27 @@ class client_cosine(client_parent):
                 targets = target_type_convert(self.config['costFunc'], targets)
                 targets = targets.to(self.device)
 
-                # --------------------------
-                # (1) Classification Update
-                # --------------------------
-                # 모든 파라미터를 unfreeze
-                for param in self.model.parameters():
-                    param.requires_grad = True
-
                 self.optimizer.zero_grad()
-
                 outputs = self.model(inputs)
                 cls_loss = self.criterion(outputs, targets)  # 분류 로스 예: cross-entropy
 
-                cls_loss.backward()
-                clip_implement(self.config['costFunc'], self.model, self.config['normClip'])
-                self.optimizer.step()
+                if len(self.target_layers) > 0 and penalty_lambda > 0:
+                    cos_sim = param_cosine_similarity(self.model, prox_model, self.target_layers)
+                    if cos_sim is not None:
+                        cos_loss = (1.0 - cos_sim) * penalty_lambda
+                        cls_loss += cos_loss
 
+                cls_loss.backward()
+
+                if self.config['normClip'] > 0:
+                    torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=self.config['normClip'])
+
+                self.optimizer.step()
                 running_loss += cls_loss.item()
 
                 # 기록용
                 all_targets.extend(targets.detach().cpu().numpy())
                 all_outputs.extend(outputs.detach().cpu().numpy())
-
-                # -------------------------
-                # (2) Cosine Reg Update
-                # -------------------------
-                if len(self.target_layers) > 0 and penalty_lambda > 0:
-                    # target_layers가 있으면 해당 레이어만 업데이트
-                    for name, param in self.model.named_parameters():
-                        if any(layer_name in name for layer_name in self.target_layers):
-                            param.requires_grad = True
-                        else:
-                            param.requires_grad = False
-
-                    self.optimizer.zero_grad()
-
-                    # param-level Cosine 계산 (forward-pass 불필요)
-                    cos_sim = param_cosine_similarity(self.model, prox_model, self.target_layers)
-                    if cos_sim is not None:
-                        # cos_loss = (1 - cos_sim)
-                        cos_loss = (1.0 - cos_sim) * penalty_lambda
-                        cos_loss.backward()
-                        clip_implement(self.config['costFunc'], self.model, self.config['normClip'])
-                        self.optimizer.step()
 
             avg_loss = running_loss / len(self.train_loader)
             key_loss = f"client/performance/train/loss/client{self.client_internalId} training loss"

@@ -92,45 +92,16 @@ class client_pearson(client_parent):
                 targets = target_type_convert(self.config['costFunc'], targets)
                 targets = targets.to(self.device)
 
-                # -----------------------------------------
-                # [1] 첫 번째 업데이트: Classification Step
-                #     (모든 레이어)
-                # -----------------------------------------
                 for param in self.model.parameters():
                     param.requires_grad = True  # 전체 레이어 학습 가능
 
                 self.optimizer.zero_grad()
 
-                # Forward
                 outputs = self.model(inputs)
-                # 분류 로스 (e.g. cross entropy)
                 cls_loss = self.criterion(outputs, targets)
 
-                cls_loss.backward()
-                clip_implement(self.config['costFunc'], self.model, self.config['normClip'])
-                self.optimizer.step()
-
-                running_loss += cls_loss.item()
-
-                # 기록 용도
-                all_targets.extend(targets.detach().cpu().numpy())
-                all_outputs.extend(outputs.detach().cpu().numpy())
-
-                # -----------------------------------------
-                # [2] 두 번째 업데이트: Pearson Reg Step
-                #     (target_layers만 업데이트)
-                # -----------------------------------------
                 if len(self.target_layers) > 0 and penalty_lambda > 0:
-                    # Freeze (target_layers가 아닌 파라미터는 requires_grad=False)
-                    for name, param in self.model.named_parameters():
-                        if any(t_layer in name for t_layer in self.target_layers):
-                            param.requires_grad = True
-                        else:
-                            param.requires_grad = False
 
-                    self.optimizer.zero_grad()
-
-                    # Pearson correlation
                     pearson_corr = param_pearson_correlation(
                         self.model, prox_model, target_layers=self.target_layers
                     )
@@ -138,10 +109,18 @@ class client_pearson(client_parent):
                         # 정규화 항: 1 - corr
                         pearson_reg = 1.0 - pearson_corr
                         reg_loss = penalty_lambda * pearson_reg
+                        cls_loss += reg_loss
 
-                        reg_loss.backward()
-                        clip_implement(self.config['costFunc'], self.model, self.config['normClip'])
-                        self.optimizer.step()
+                cls_loss.backward()
+
+                if self.config['normClip'] > 0:
+                    torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=self.config['normClip'])
+
+                self.optimizer.step()
+
+                running_loss += cls_loss.item()
+                all_targets.extend(targets.detach().cpu().numpy())
+                all_outputs.extend(outputs.detach().cpu().numpy())
 
             # 에폭마다 평균 Loss 기록
             avg_loss = running_loss / len(self.train_loader)
