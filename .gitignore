@@ -558,3 +558,6 @@ dataset/*
 !dataset/cifar100/cifar100DataLoader.py
 !dataset/mnist/mnistDataLoader.py
 !dataset/svhn/svhn_dataloader.py
+
+results/
+wandb/
