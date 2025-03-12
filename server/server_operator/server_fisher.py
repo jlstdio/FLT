@@ -14,11 +14,12 @@ import torch
 import os
 import numpy as np
 from server.examin_model import examin_model
+from server.picking_clients.client_picker_manager import pick_clients
 from server.server_type_loader import server_type_loader
 from server.util_server import *
 from util.fisher import save_fisher, compute_fisher
 from util.util import dltAllFiles, loadData
-
+from server.server_operator.server_parent import server_parent
 
 class PTHFileHandler(FileSystemEventHandler):
     def __init__(self, server):
@@ -30,114 +31,11 @@ class PTHFileHandler(FileSystemEventHandler):
             self.server.process_new_file(file_name)
 
 
-class Server(Process):
+class Server(server_parent):
     def __init__(self, rootModel, examinDataset_list, serverConfig, basicConfig, currentRound, flipboard,
                  turnFlag, sessionId, pickedClientsList, resultPath, wandbQueue, totalDistributionSet):
-        super(Server, self).__init__()
-
-        self.wandbQueue = wandbQueue
-        self.serverConfig = serverConfig
-        self.basicConfig = basicConfig
-        self.cudaId = basicConfig['updateClientsPerRound'] // basicConfig['clientsPerCuda']
-        self.cudaId += basicConfig['startingCuda']
-        self.targetRound = serverConfig['flRound']
-        self.reservedRootModel = copy.deepcopy(rootModel)
-        self.rootModel = None
-        self.flModel = None
-        self.turnFlag = turnFlag
-        self.sessionId = sessionId
-        self.currentRound = currentRound
-        self.participants = basicConfig['numClient']
-        self.internalIdWithClients = self.participants
-        self.status = [True for i in range(self.participants)]
-        self.flipboard = flipboard
-        self.examinDataset_list = examinDataset_list
-        self.pickedClientsList = pickedClientsList
-        self.clientsList = [i for i in range(self.participants)]
-        self.clientsWaitingTime = [0.0 for i in range(self.participants)]
-        self.updateClientsPerRound = self.basicConfig['updateClientsPerRound']
-        self.lastAcc = 0.0
-        self.numOfReceivedClients = 0
-        self.seed = basicConfig['seed']
-        self.rng = np.random.default_rng(self.seed)
-        self.numOfTypes = len(basicConfig['participantsInfo'])
-        self.roundStartTime = 0
-        self.resultPath = resultPath
-        self.scorePath = resultPath + "/" + basicConfig["serverScoreFolderRoot"]
-        self.totalDistributionSet = {client: set(classes) for client, classes in totalDistributionSet.items()}
-
-        self.recentPickedClasses = []
-        self.recentPickedClasses_lock = threading.Lock()
-
-        torch.manual_seed(self.seed)
-        torch.cuda.manual_seed(self.seed)
-        torch.cuda.manual_seed_all(self.seed)
-        torch.backends.cudnn.deterministic = True
-        torch.backends.cudnn.benchmark = False
-        np.random.seed(self.seed)
-        random.seed(self.seed)
-
-        self.param_diff_dir = os.path.join(self.scorePath, "param_diff_dir")
-        os.makedirs(self.param_diff_dir, exist_ok=True)
-
-        # mkdir
-        self.pth_folder = str(self.basicConfig['receivedPthPath'])
-        os.makedirs(self.pth_folder, exist_ok=True)
-
-        self.client_fisher_folder = str(self.basicConfig['receivedFisherPath'])
-        os.makedirs(self.client_fisher_folder, exist_ok=True)
-
-        # aggregateFisherPath
-        self.aggregated_fisher_folder = str(self.basicConfig['aggregateFisherPath'])
-        os.makedirs(self.aggregated_fisher_folder, exist_ok=True)
-
-        os.makedirs(self.basicConfig['receivedProfilePath'], exist_ok=True)
-
-        # root model init
-        rootModelPath = self.basicConfig['rootModelFilePath']
-        os.makedirs(rootModelPath, exist_ok=True)
-        self.rootModel = copy.deepcopy(self.reservedRootModel)
-        testName = self.basicConfig['testName']
-        torch.save(self.rootModel.state_dict(), f'{rootModelPath}/rootModel-{testName}.pth')
-        torch.save(self.rootModel.state_dict(), f'{self.resultPath}/rootModel-{testName}.pth')
-        del self.rootModel
-
-        print("Server online")
-
-    def __getstate__(self):
-        state = self.__dict__.copy()
-        # Remove the lock from the state to avoid pickling errors
-        del state['recentPickedClasses_lock']
-        return state
-
-    def __setstate__(self, state):
-        self.__dict__.update(state)
-        # Reinitialize the lock after unpickling
-        self.recentPickedClasses_lock = threading.Lock()
-
-    def process_new_file(self, file_name):
-        try:
-            file_name = file_name.split('/')[-1]
-            client_id = int(file_name.split('_')[0])
-
-            if not self.status[client_id]:
-                self.status[client_id] = True
-                print(f"Received file from client {client_id}")
-
-        except ValueError:
-            print(f"Invalid file name format: {file_name}")
-
-        if all(self.status) and self.currentRound.value != -1:
-            print('waiting for last one to upload file completely')
-            flag = True
-            while flag:
-                flag = False
-                for i in range(len(self.flipboard)):
-                    if self.flipboard[i] == 0:
-                        flag = True
-
-                time.sleep(1)
-            self.run_FL()
+        super().__init__(rootModel, examinDataset_list, serverConfig, basicConfig, currentRound, flipboard,
+                 turnFlag, sessionId, pickedClientsList, resultPath, wandbQueue, totalDistributionSet)
 
     def run_FL(self):
         # initiate variables
@@ -344,7 +242,9 @@ class Server(Process):
         dltAllFiles(self.basicConfig['clientsNegotiationFolderPath'])
 
         print("negotiating...")
-        self.pick_clients()
+        pickedClients, numCluster = pick_clients(self)
+        self.update_picked_clients(pickedClients, numCluster)
+        
         self.roundStartTime = time.time_ns()  # log the round start time to track the round time
         self.currentRound.value += 1  # by up-counting the round value we're letting participants know about this round
 
@@ -410,109 +310,3 @@ class Server(Process):
             writer.writerow(row_to_write)
 
         print(f"Picked Clients for this round: {pickedClients}")
-
-    def pick_clients(self):
-        pickedClients = []
-        numCluster = 0
-
-        if self.serverConfig['pickMode'] == 'random':
-            from server.picking_clients.random_pick_clients import random_pick_clients
-
-            initial_data = {
-                "clients_per_round": self.updateClientsPerRound,
-                "total_clients": self.basicConfig['numClient']
-            }
-            pickedClients = random_pick_clients(initial_data, self.rng)
-        elif self.serverConfig['pickMode'] == 'sequential':
-            from server.picking_clients.sequential_pick_clients import sequential_pick_clients
-
-            initial_data = {
-                "pair_size": self.updateClientsPerRound,
-                "total_clients": self.basicConfig['numClient'],
-                "curRound": self.currentRound.value,
-                "initial_idx": 3
-            }
-            pickedClients = sequential_pick_clients(initial_data)
-        elif self.serverConfig['pickMode'] == 'pickey':
-            from server.picking_clients.pickey_pick_clients import pickey_pick_clients
-
-            initial_data = {"none": None}
-            pickedClients = pickey_pick_clients(initial_data, self.rng)
-        elif self.serverConfig['pickMode'] == 'clustered_sequential' or self.serverConfig['pickMode'] == 'clustered':
-            from server.picking_clients.clustered_pick_clients import clustered_pick_clients
-
-            participantInfo = self.basicConfig['participantsInfo']
-            past_idx = 0
-            cluster_list = []
-            for typeInfo in participantInfo:
-                type_id = typeInfo.split(':')[0]
-                type_ratio = float(typeInfo.split(':')[1])
-                next_idx = past_idx + int(len(self.clientsList) * type_ratio)
-                cluster_list.append(self.clientsList[past_idx:next_idx])
-                past_idx = next_idx
-
-            initial_data = {
-                "clustered_clients_list": cluster_list,
-                "updateClientsPerRound": self.basicConfig['updateClientsPerRound'],
-                "curRound": self.currentRound.value,
-                "initial_cluster": 0
-            }
-            pickedClients, numCluster = clustered_pick_clients(initial_data, self.rng, self.serverConfig['update_cluster_every'])
-
-        elif self.serverConfig['pickMode'] == 'clustered_random':
-            from server.picking_clients.clustered_pick_clients import clustered_pick_clients
-
-            participantInfo = self.basicConfig['participantsInfo']
-            past_idx = 0
-            cluster_list = []
-            for typeInfo in participantInfo:
-                type_id = typeInfo.split(':')[0]
-                type_ratio = float(typeInfo.split(':')[1])
-                next_idx = past_idx + int(len(self.clientsList) * type_ratio)
-                cluster_list.append(self.clientsList[past_idx:next_idx])
-                past_idx = next_idx
-
-            initial_data = {
-                "clustered_clients_list": cluster_list,
-                "updateClientsPerRound": self.basicConfig['updateClientsPerRound'],
-                "curRound": self.currentRound.value,
-                "initial_cluster": 0
-            }
-            pickedClients, numCluster = clustered_pick_clients(initial_data, self.rng, self.serverConfig['update_cluster_every'])
-
-        self.update_picked_clients(pickedClients, numCluster)
-
-    def run(self):
-        event_handler = PTHFileHandler(self)
-        observer = Observer()
-        observer.schedule(event_handler, self.pth_folder, recursive=False)
-        observer.start()
-
-        # 필요시 fisher 정보를 만들어서 초기화
-        if str(self.basicConfig['aggregate_mode']).__contains__('fisher'):
-            if self.basicConfig['aggregate_mode'] == 'pretrained_fedAvg':
-                dataloader = loadData(copy.deepcopy(self.examinDataset), self.serverConfig['costFunc'],
-                                      self.basicConfig['numClass'])
-                device = torch.device(f"cuda:{self.cudaId}" if is_available() else "cpu")
-                model = copy.deepcopy(self.reservedRootModel)
-                fisher = compute_fisher(model, dataloader, self.serverConfig['costFunc'], device)
-            else:
-                fisher = {name: torch.zeros_like(param) for name, param in self.reservedRootModel.named_parameters()}
-
-            save_fisher(fisher, self.aggregated_fisher_folder + f'/rootFisher-' + self.basicConfig['testName'] + '.pth')
-
-        print('informing to clients')
-        self.negotiate()
-
-        try:
-            while True:
-                if self.currentRound.value == -1:
-                    observer.stop()
-                    print(f'server round is over')
-                    print(f'server will terminate after 10 sec')
-                    time.sleep(10)
-                    break
-                time.sleep(1)
-        except KeyboardInterrupt:
-            observer.stop()
-        observer.join()

@@ -53,7 +53,7 @@ class client_parent(Process):
         self.sessionId = sessionId
         self.turnFlag = turnFlag
         self.client_internalId = client_internalId
-        self.modelReserved = copy.deepcopy(model)
+        self.modelReserved = None
         self.round = 0
         self.wandbQueue = wandbQueue
         self.serverRound = serverRound
@@ -86,6 +86,17 @@ class client_parent(Process):
         self.criterion = criterion_select(self.config['costFunc'])
 
         print(f"Client {client_internalId} online")
+    
+    def load_model(self):
+        rootModelPath = self.basicConfig['rootModelFilePath']
+        testName = self.basicConfig['testName']
+        rootModelPath = f'{rootModelPath}/rootModel-{testName}.pth'
+
+        model_state_dict = torch.load(rootModelPath, map_location=self.device, weights_only=True)
+        
+        self.model.load_state_dict(model_state_dict)
+        self.model = self.model.to(self.device)
+        self.modelReserved = copy.deepcopy(self.model)
 
     def loadData(self):
         try:
@@ -295,17 +306,12 @@ class client_parent(Process):
 
         """ [OPEN] TRAIN """
         self.round = self.serverRound.value
-        self.model = copy.deepcopy(self.modelReserved)
         cudaId = self.sessionId[self.client_internalId] // self.basicConfig['clientsPerCuda']
         cudaId += self.basicConfig['startingCuda']
         self.device = torch.device(f"cuda:{cudaId}" if is_available() else "cpu")
-        self.loadData()
-        rootModelPath = self.basicConfig['rootModelFilePath']
-        testName = self.basicConfig['testName']
-        rootModelPath = f'{rootModelPath}/rootModel-{testName}.pth'
-        model_state_dict = torch.load(rootModelPath, map_location=self.device, weights_only=True)
-        self.model.load_state_dict(model_state_dict)
-        self.model = self.model.to(self.device)
+        
+        self.loadData() 
+        self.load_model()
 
         """ [OPEN] FISHER 정보 가져오기 """
         if str(self.basicConfig['aggregate_mode']).__contains__('fisher'):

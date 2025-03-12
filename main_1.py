@@ -5,11 +5,11 @@ import time
 from dataPrepare.data_prepare_manager import create_dataset_dict, select_dataset
 from dataPrepare.noniid import *
 from network.FLNetwork import FLNetwork
-from server.server import Server
 import json
 import torch
 from util.util import showDistribution, dltAllFiles
 from util.wandbClient import WandbClient
+from server.server_operator.server import Server
 
 
 def runner(networkConfigPath, dataConfigPath):
