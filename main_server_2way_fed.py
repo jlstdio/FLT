@@ -7,9 +7,9 @@ from dataPrepare.noniid import *
 from network.FLNetwork import FLNetwork
 import json
 import torch
+from server.server_operator.server_2way_fed import server_2way_fed
 from util.util import showDistribution, dltAllFiles
 from util.wandbClient import WandbClient
-from server.server_operator.server import Server
 
 
 def runner(networkConfigPath, dataConfigPath):
@@ -145,18 +145,18 @@ def runner(networkConfigPath, dataConfigPath):
     serverRound, flipboard, turnFlag, sessionId, pickedClients = network.getSharedInfo()
 
     modelToServer = copy.deepcopy(modelToLoad)
-    server = Server(rootModel=modelToServer,
-                    examinDataset_list=serverTestDataset_list,
-                    serverConfig=serverConfig,
-                    basicConfig=basicConfig,
-                    currentRound=serverRound,
-                    flipboard=flipboard,
-                    turnFlag=turnFlag,
-                    sessionId=sessionId,
-                    pickedClientsList=pickedClients,
-                    resultPath=resultRootPath,
-                    wandbQueue=wandbQueue,
-                    totalDistributionSet=totalDistributionSet)
+    server = server_2way_fed(rootModel=modelToServer,
+                             examinDataset_list=serverTestDataset_list,
+                            serverConfig=serverConfig,
+                            basicConfig=basicConfig,
+                            currentRound=serverRound,
+                            flipboard=flipboard,
+                            turnFlag=turnFlag,
+                            sessionId=sessionId,
+                            pickedClientsList=pickedClients,
+                            resultPath=resultRootPath,
+                            wandbQueue=wandbQueue,
+                            totalDistributionSet=totalDistributionSet)
 
     server.start()
 
@@ -189,17 +189,11 @@ if __name__ == "__main__":
     networkConfigRoot = './config/networkConfig'
     dataConfigRoot = './config/datasetConfig'
 
-    networkConfigPath_prefix = networkConfigRoot + '/2-step_clustered_FL/primary_step_infra-cluster_aggregation'
+    networkConfigPath_prefix = networkConfigRoot
 
-    networkConfig_PathList = [f'{networkConfigPath_prefix}/picking_5clients/r1_5c_primary_step_infra-cluster.json',
-                              f'{networkConfigPath_prefix}/picking_5clients/r2_5c_primary_step_infra-cluster.json',
-                              f'{networkConfigPath_prefix}/picking_5clients/r3_5c_primary_step_infra-cluster.json',
-                              f'{networkConfigPath_prefix}/picking_5clients/r4_5c_primary_step_infra-cluster.json']
+    networkConfig_PathList = [f'{networkConfigPath_prefix}/config_fed_2way_avg.json']
 
-    dataConfig_PathList = [f'{dataConfigRoot}/dirichlet_by_num_of_types/dataConfig_dirichlet_1type_fraction.json',
-                           f'{dataConfigRoot}/dirichlet_by_num_of_types/dataConfig_dirichlet_1type_fraction.json',
-                           f'{dataConfigRoot}/dirichlet_by_num_of_types/dataConfig_dirichlet_1type_fraction.json',
-                           f'{dataConfigRoot}/dirichlet_by_num_of_types/dataConfig_dirichlet_1type_fraction.json']
+    dataConfig_PathList = [f'{dataConfigRoot}/dirichlet_by_num_of_types/dataConfig_dirichlet_10types.json']
 
     for network_configPath, data_configPath in zip(networkConfig_PathList, dataConfig_PathList):
         print(f'running with {network_configPath} | {data_configPath}')

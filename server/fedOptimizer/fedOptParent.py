@@ -14,6 +14,7 @@ def summary(model):
 
 class fedOptParent:
     def __init__(self, rootModel, cudaId, additionalInfo=None):
+
         self.additionalInfo = additionalInfo
         self.rootModelStatic = copy.deepcopy(rootModel)
         self.resultRootModel = copy.deepcopy(self.rootModelStatic)

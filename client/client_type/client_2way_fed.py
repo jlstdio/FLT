@@ -37,7 +37,7 @@ class client_2way_fed(client_parent):
         testName = self.basicConfig['testName']
         
         main_rootModelPath = f'{rootModelPath}/main_rootModel-{testName}.pth'
-        sub_rootModelPath = f'{rootModelPath}/sub_rootModel-{testName}.pth'
+        sub_rootModelPath = f'{rootModelPath}/sub_{self.clientType}_rootModel-{testName}.pth'
 
         main_model_state_dict = torch.load(main_rootModelPath, map_location=self.device, weights_only=True)
         sub_model_state_dict = torch.load(sub_rootModelPath, map_location=self.device, weights_only=True)

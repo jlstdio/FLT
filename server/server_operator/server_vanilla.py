@@ -71,12 +71,7 @@ class Server(server_parent):
         # 레이블과 데이터가 합쳐진 결과를 zip 객체로 반환
         examinDataset_combined = zip(combined_labels, combined_data)
 
-        self.flModel = server_type_loader(self.basicConfig,
-                                          self.serverConfig,
-                                          self.reservedRootModel,
-                                          self.cudaId,
-                                          self.currentRound,
-                                          examinDataset_combined)
+        self.flModel = server_type_loader(self, examinDataset_combined)
         self.flModel.flush()
 
         for filePath in pth_files:
@@ -220,8 +215,8 @@ class Server(server_parent):
         dltAllFiles(self.basicConfig['clientsNegotiationFolderPath'])
 
         print("negotiating...")
-        pickedClients, numCluster = pick_clients(self)
-        self.update_picked_clients(pickedClients, numCluster)
+        self.pickedClients, self.numCluster = pick_clients(self)
+        self.update_picked_clients(self.pickedClients, self.numCluster)
         
         self.roundStartTime = time.time_ns()  # log the round start time to track the round time
         self.currentRound.value += 1  # by up-counting the round value we're letting participants know about this round
@@ -264,27 +259,3 @@ class Server(server_parent):
                     print(f"parameter sent to client {clientId}")
 
         dltAllFiles(self.basicConfig['receivedProfilePath'])
-
-    def update_picked_clients(self, pickedClients, numCluster):
-        for session_id, client_id in enumerate(pickedClients):
-            self.sessionId[client_id] = session_id
-            self.status[client_id] = False
-            self.turnFlag[client_id] = 1  # mark the client which is picked
-            self.flipboard[client_id] = 0  # mark as file not sent
-
-        for i in range(self.updateClientsPerRound):
-            self.pickedClientsList[i] = pickedClients[i]
-
-        # CSV 파일에 self.round와 pickedClientsList 저장
-        with open(f'{self.scorePath}/picked_clients.csv', mode='a', newline='') as file:
-            writer = csv.writer(file)
-
-            # self.round가 1일 때 컬럼 이름 추가
-            if self.currentRound.value == 0:
-                writer.writerow(["Round", "PickedList", "pickedCluster"])
-
-            # pickedClientsList를 쉼표로 구분된 문자열로 저장
-            row_to_write = [self.currentRound.value + 1, ",".join(map(str, self.pickedClientsList)), f",{numCluster}"]
-            writer.writerow(row_to_write)
-
-        print(f"Picked Clients for this round: {pickedClients}")

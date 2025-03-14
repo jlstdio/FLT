@@ -185,12 +185,7 @@ class server_parent(Process):
         # 레이블과 데이터가 합쳐진 결과를 zip 객체로 반환
         examinDataset_combined = zip(combined_labels, combined_data)
 
-        self.flModel = server_type_loader(self.basicConfig,
-                                          self.serverConfig,
-                                          self.reservedRootModel,
-                                          self.cudaId,
-                                          self.currentRound,
-                                          examinDataset_combined)
+        self.flModel = server_type_loader(self, examinDataset_combined)
         self.flModel.flush()
 
         for filePath in pth_files:
@@ -345,8 +340,8 @@ class server_parent(Process):
         dltAllFiles(self.basicConfig['clientsNegotiationFolderPath'])
 
         print("negotiating...")
-        pickedClients, numCluster = pick_clients(self)
-        self.update_picked_clients(pickedClients, numCluster)
+        self.pickedClients, self.numCluster = pick_clients(self)
+        self.update_picked_clients(self.pickedClients, self.numCluster)
         
         self.roundStartTime = time.time_ns()  # log the round start time to track the round time
         self.currentRound.value += 1  # by up-counting the round value we're letting participants know about this round
@@ -413,3 +408,39 @@ class server_parent(Process):
             writer.writerow(row_to_write)
 
         print(f"Picked Clients for this round: {pickedClients}")
+
+
+    def run(self):
+        event_handler = PTHFileHandler(self)
+        observer = Observer()
+        observer.schedule(event_handler, self.pth_folder, recursive=False)
+        observer.start()
+
+        # 필요시 fisher 정보를 만들어서 초기화
+        if str(self.basicConfig['aggregate_mode']).__contains__('fisher'):
+            if self.basicConfig['aggregate_mode'] == 'pretrained_fedAvg':
+                dataloader = loadData(copy.deepcopy(self.examinDataset), self.serverConfig['costFunc'],
+                                      self.basicConfig['numClass'])
+                device = torch.device(f"cuda:{self.cudaId}" if is_available() else "cpu")
+                model = copy.deepcopy(self.reservedRootModel)
+                fisher = compute_fisher(model, dataloader, self.serverConfig['costFunc'], device)
+            else:
+                fisher = {name: torch.zeros_like(param) for name, param in self.reservedRootModel.named_parameters()}
+
+            save_fisher(fisher, self.aggregated_fisher_folder + f'/rootFisher-' + self.basicConfig['testName'] + '.pth')
+
+        print('informing to clients')
+        self.negotiate()
+
+        try:
+            while True:
+                if self.currentRound.value == -1:
+                    observer.stop()
+                    print(f'server round is over')
+                    print(f'server will terminate after 10 sec')
+                    time.sleep(10)
+                    break
+                time.sleep(1)
+        except KeyboardInterrupt:
+            observer.stop()
+        observer.join()

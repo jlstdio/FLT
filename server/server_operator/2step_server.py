@@ -82,12 +82,7 @@ class Server(server_parent):
         # 레이블과 데이터가 합쳐진 결과를 zip 객체로 반환
         examinDataset_combined = zip(combined_labels, combined_data)
 
-        self.flModel = server_type_loader(self.basicConfig,
-                                          self.serverConfig,
-                                          self.reservedRootModel,
-                                          self.cudaId,
-                                          self.currentRound,
-                                          examinDataset_combined)
+        self.flModel = server_type_loader(self, examinDataset_combined)
         self.flModel.flush()
 
         for filePath in pth_files:
@@ -242,8 +237,8 @@ class Server(server_parent):
         dltAllFiles(self.basicConfig['clientsNegotiationFolderPath'])
 
         print("negotiating...")
-        pickedClients, numCluster = pick_clients(self)
-        self.update_picked_clients(pickedClients, numCluster)
+        self.pickedClients, self.numCluster = pick_clients(self)
+        self.update_picked_clients(self.pickedClients, self.numCluster
         
         self.roundStartTime = time.time_ns()  # log the round start time to track the round time
         self.currentRound.value += 1  # by up-counting the round value we're letting participants know about this round

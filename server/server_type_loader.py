@@ -7,137 +7,148 @@ import os
 ##########################################################
 
 
-def server_type_loader(basicConfig, serverConfig, reservedRootModel, cudaId, currentRound, examinDataset):
+def server_type_loader(self, examinDataset):
     flModel = None
-    if basicConfig['aggregate_mode'] == 'fedAvg' or basicConfig['aggregate_mode'] == 'fed_avg':
+    if self.basicConfig['aggregate_mode'] == 'fedAvg' or self.basicConfig['aggregate_mode'] == 'fed_avg':
         from server.fedOptimizer.fedAvg import fedAvg
-        flModel = fedAvg(reservedRootModel, cudaId)
+        flModel = fedAvg(self.reservedRootModel, self.cudaId)
 
-    elif basicConfig['aggregate_mode'] == 'fed_prox' or basicConfig['aggregate_mode'] == 'partial_fed_prox':
+    elif self.basicConfig['aggregate_mode'] == 'fed_prox' or self.basicConfig['aggregate_mode'] == 'partial_fed_prox':
         from server.fedOptimizer.fedAvg import fedAvg
-        flModel = fedAvg(reservedRootModel, cudaId)
+        flModel = fedAvg(self.reservedRootModel, self.cudaId)
 
-    elif basicConfig['aggregate_mode'] == 'fed_cka' or basicConfig['aggregate_mode'] == 'cka':
+    elif self.basicConfig['aggregate_mode'] == 'fed_cka' or self.basicConfig['aggregate_mode'] == 'cka':
         from server.fedOptimizer.fedAvg import fedAvg
-        flModel = fedAvg(reservedRootModel, cudaId)
+        flModel = fedAvg(self.reservedRootModel, self.cudaId)
 
-    elif basicConfig['aggregate_mode'] == 'fed_cosine' or basicConfig['aggregate_mode'] == 'cosine':
+    elif self.basicConfig['aggregate_mode'] == 'fed_cosine' or self.basicConfig['aggregate_mode'] == 'cosine':
         from server.fedOptimizer.fedAvg import fedAvg
-        flModel = fedAvg(reservedRootModel, cudaId)
+        flModel = fedAvg(self.reservedRootModel, self.cudaId)
 
-    elif basicConfig['aggregate_mode'] == 'fed_pearson' or basicConfig['aggregate_mode'] == 'pearson':
+    elif self.basicConfig['aggregate_mode'] == 'fed_pearson' or self.basicConfig['aggregate_mode'] == 'pearson':
         from server.fedOptimizer.fedAvg import fedAvg
-        flModel = fedAvg(reservedRootModel, cudaId)
+        flModel = fedAvg(self.reservedRootModel, self.cudaId)
 
-    elif basicConfig['aggregate_mode'] == 'fed_l2' or basicConfig['aggregate_mode'] == 'l2':
+    elif self.basicConfig['aggregate_mode'] == 'fed_l2' or self.basicConfig['aggregate_mode'] == 'l2':
         from server.fedOptimizer.fedAvg import fedAvg
-        flModel = fedAvg(reservedRootModel, cudaId)
+        flModel = fedAvg(self.reservedRootModel, self.cudaId)
 
-    elif basicConfig['aggregate_mode'] == 'fed_l_inf' or basicConfig['aggregate_mode'] == 'l_inf':
+    elif self.basicConfig['aggregate_mode'] == 'fed_l_inf' or self.basicConfig['aggregate_mode'] == 'l_inf':
         from server.fedOptimizer.fedAvg import fedAvg
-        flModel = fedAvg(reservedRootModel, cudaId)
+        flModel = fedAvg(self.reservedRootModel, self.cudaId)
 
-    elif basicConfig['aggregate_mode'] == 'fed_em' or basicConfig['aggregate_mode'] == 'em':
+    elif self.basicConfig['aggregate_mode'] == 'fed_em' or self.basicConfig['aggregate_mode'] == 'em':
         from server.fedOptimizer.fedAvg import fedAvg
-        flModel = fedAvg(reservedRootModel, cudaId)
+        flModel = fedAvg(self.reservedRootModel, self.cudaId)
 
-    elif basicConfig['aggregate_mode'] == 'fedAvg_w_mem':
+    elif self.basicConfig['aggregate_mode'] == 'fedAvg_w_mem':
         from server.fedOptimizer.fedAvg_w_memorization import fedAvg_w_mem
 
-        memorized_pth_path = basicConfig['memorizedPthPath']
-        pth_folder = basicConfig['receivedPthPath']
+        memorized_pth_path = self.basicConfig['memorizedPthPath']
+        pth_folder = self.basicConfig['receivedPthPath']
         pth_files = [os.path.join(pth_folder, f) for f in os.listdir(pth_folder) if f.endswith('.pth')]
 
         additional_info_dict = {
             'memorized_pth_path': memorized_pth_path,
-            'maximum_pth_to_mix': serverConfig['maximum_pth_to_mix'],
-            'server_round_mem': serverConfig['server_round_mem'],
+            'maximum_pth_to_mix': self.serverConfig['maximum_pth_to_mix'],
+            'server_round_mem': self.serverConfig['server_round_mem'],
             'pth_files': pth_files,
-            'curRound': currentRound.value
+            'curRound': self.currentRound.value
         }
-        flModel = fedAvg_w_mem(reservedRootModel, cudaId, additional_info_dict)
-    elif basicConfig['aggregate_mode'] == 'fisher_client':
+        flModel = fedAvg_w_mem(self.reservedRootModel, self.cudaId, additional_info_dict)
+    elif self.basicConfig['aggregate_mode'] == 'fisher_client':
         from server.fedOptimizer.fedCurv_fisher_calc_client import fedCurv_fisher_calc_client
 
         additional_info_dict = {
-            'curRound': currentRound.value,
-            'update_fisher_every': serverConfig['update_cluster_every']
+            'curRound': self.currentRound.value,
+            'update_fisher_every': self.serverConfig['update_cluster_every']
         }
 
-        flModel = fedCurv_fisher_calc_client(reservedRootModel, cudaId, additional_info_dict)
+        flModel = fedCurv_fisher_calc_client(self.reservedRootModel, self.cudaId, additional_info_dict)
 
-    elif basicConfig['aggregate_mode'] == 'weighted_fed_avg_param_diff':
+    elif self.basicConfig['aggregate_mode'] == 'weighted_fed_avg_param_diff':
         from server.fedOptimizer.weighed_fed_avg_param_diff import weighed_fed_avg_param_diff
 
         additional_info_dict = {
-            'costFunc': serverConfig['costFunc'],
+            'costFunc': self.serverConfig['costFunc'],
             'dataset': copy.deepcopy(examinDataset),
-            'numClass': basicConfig['numClass']
+            'numClass': self.basicConfig['numClass']
         }
 
-        flModel = weighed_fed_avg_param_diff(reservedRootModel, cudaId, additional_info_dict)
-    elif basicConfig['aggregate_mode'] == 'weighted_fed_avg_fisher':
+        flModel = weighed_fed_avg_param_diff(self.reservedRootModel, self.cudaId, additional_info_dict)
+    elif self.basicConfig['aggregate_mode'] == 'weighted_fed_avg_fisher':
         from server.fedOptimizer.weighed_fed_avg_fisher import weighed_fed_avg_fisher
 
         additional_info_dict = {
-            'costFunc': serverConfig['costFunc'],
+            'costFunc': self.serverConfig['costFunc'],
             'dataset': copy.deepcopy(examinDataset),
-            'numClass': basicConfig['numClass']
+            'numClass': self.basicConfig['numClass']
         }
 
-        flModel = weighed_fed_avg_fisher(reservedRootModel, cudaId, additional_info_dict)
-    elif basicConfig['aggregate_mode'] == 'fisher_server':
+        flModel = weighed_fed_avg_fisher(self.reservedRootModel, self.cudaId, additional_info_dict)
+    elif self.basicConfig['aggregate_mode'] == 'fisher_server':
         from server.fedOptimizer.fedCurv_fisher_calc_server import fedCurv_fisher_calc_server
 
         additional_info_dict = {
-            'costFunc': serverConfig['costFunc'],
+            'costFunc': self.serverConfig['costFunc'],
             'dataset': copy.deepcopy(examinDataset),
-            'numClass': basicConfig['numClass'],
-            'curRound': currentRound.value,
-            'update_fisher_every': serverConfig['update_cluster_every']
+            'numClass': self.basicConfig['numClass'],
+            'curRound': self.currentRound.value,
+            'update_fisher_every': self.serverConfig['update_cluster_every']
         }
-        flModel = fedCurv_fisher_calc_server(reservedRootModel, cudaId, additional_info_dict)
-    elif basicConfig['aggregate_mode'] == 'calm_fisher':
+        flModel = fedCurv_fisher_calc_server(self.reservedRootModel, self.cudaId, additional_info_dict)
+    elif self.basicConfig['aggregate_mode'] == 'calm_fisher':
         from server.fedOptimizer.calm_fisher import calm_fisher
 
         additional_info_dict = {
-            'costFunc': serverConfig['costFunc'],
+            'costFunc': self.serverConfig['costFunc'],
             'dataset': copy.deepcopy(examinDataset),
-            'numClass': basicConfig['numClass'],
-            'curRound': currentRound.value,
-            'fisher_patient': serverConfig['fisher_patient']
+            'numClass': self.basicConfig['numClass'],
+            'curRound': self.currentRound.value,
+            'fisher_patient': self.serverConfig['fisher_patient']
         }
-        flModel = calm_fisher(reservedRootModel, cudaId, additional_info_dict)
-    elif basicConfig['aggregate_mode'] == 'selective_fisher':
+        flModel = calm_fisher(self.reservedRootModel, self.cudaId, additional_info_dict)
+    elif self.basicConfig['aggregate_mode'] == 'selective_fisher':
         from server.fedOptimizer.selective_fisher import selective_fisher
 
         additional_info_dict = {
-            'costFunc': serverConfig['costFunc'],
+            'costFunc': self.serverConfig['costFunc'],
             'dataset': copy.deepcopy(examinDataset),
-            'numClass': basicConfig['numClass'],
-            'top_percent': serverConfig['fisher_select']
+            'numClass': self.basicConfig['numClass'],
+            'top_percent': self.serverConfig['fisher_select']
         }
-        flModel = selective_fisher(reservedRootModel, cudaId, additional_info_dict)
-    elif basicConfig['aggregate_mode'] == 'calm_selective_fisher':
+        flModel = selective_fisher(self.reservedRootModel, self.cudaId, additional_info_dict)
+    elif self.basicConfig['aggregate_mode'] == 'calm_selective_fisher':
         from server.fedOptimizer.calm_selective_fisher import calm_selective_fisher
 
         additional_info_dict = {
-            'costFunc': serverConfig['costFunc'],
+            'costFunc': self.serverConfig['costFunc'],
             'dataset': copy.deepcopy(examinDataset),
-            'numClass': basicConfig['numClass'],
-            'top_percent': serverConfig['fisher_select'],
-            'curRound': currentRound.value,
-            'fisher_patient': serverConfig['fisher_patient']
+            'numClass': self.basicConfig['numClass'],
+            'top_percent': self.serverConfig['fisher_select'],
+            'curRound': self.currentRound.value,
+            'fisher_patient': self.serverConfig['fisher_patient']
         }
-        flModel = calm_selective_fisher(reservedRootModel, cudaId, additional_info_dict)
-    elif basicConfig['aggregate_mode'] == 'pretrained_fedAvg':
+        flModel = calm_selective_fisher(self.reservedRootModel, self.cudaId, additional_info_dict)
+    elif self.basicConfig['aggregate_mode'] == 'pretrained_fedAvg':
         from server.fedOptimizer.fedCurv_fisher_calc_server import fedCurv_fisher_calc_server
 
         additional_info_dict = {
-            'costFunc': serverConfig['costFunc'],
+            'costFunc': self.serverConfig['costFunc'],
             'dataset': copy.deepcopy(examinDataset),
-            'numClass': basicConfig['numClass']
+            'numClass': self.basicConfig['numClass']
         }
-        flModel = fedCurv_fisher_calc_server(reservedRootModel, cudaId, additional_info_dict)
+        flModel = fedCurv_fisher_calc_server(self.reservedRootModel, self.cudaId, additional_info_dict)
+
+    elif self.basicConfig['aggregate_mode'] == 'fed_2way_avg':
+        from server.fedOptimizer.fed_2way_avg import fed_2way_avg
+
+        additional_info_dict = {
+            'cluster_info': self.cluster_info,
+            'picked_clients': self.pickedClients,
+            'num_cluster': self.numCluster
+        }
+
+        flModel = fed_2way_avg(self.reservedRootModel, self.cudaId, additional_info_dict)
 
     return flModel

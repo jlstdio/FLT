@@ -17,25 +17,15 @@ from server.examin_model import examin_model
 from server.picking_clients.client_picker_manager import pick_clients
 from server.server_type_loader import server_type_loader
 from server.util_server import *
-from util.fisher import save_fisher, compute_fisher
 from util.util import dltAllFiles, loadData
 from server.server_operator.server_parent import server_parent
 
-class PTHFileHandler(FileSystemEventHandler):
-    def __init__(self, server):
-        self.server = server
-
-    def on_created(self, event):
-        if not event.is_directory and event.src_path.endswith('.pth'):
-            file_name = os.path.basename(event.src_path)
-            self.server.process_new_file(file_name)
-
-
-class Server(server_parent):
+class server_2way_fed(server_parent):
     def __init__(self, rootModel, examinDataset_list, serverConfig, basicConfig, currentRound, flipboard,
                  turnFlag, sessionId, pickedClientsList, resultPath, wandbQueue, totalDistributionSet):
         super().__init__(rootModel, examinDataset_list, serverConfig, basicConfig, currentRound, flipboard,
                  turnFlag, sessionId, pickedClientsList, resultPath, wandbQueue, totalDistributionSet)
+        print('server_2way_fed init')
 
     def run_FL(self):
         # initiate variables
@@ -96,19 +86,11 @@ class Server(server_parent):
         aggregatedModelPath = self.basicConfig['aggregateFilePath']
         os.makedirs(aggregatedModelPath, exist_ok=True)
         testName = self.basicConfig['testName']
+        
+        ## TODO cluster info calculation 진행
+        self.cluster_info
 
-        # 정보 aggregated
-        if str(self.basicConfig['aggregate_mode']).__contains__('fisher'):
-            aggregated_model, aggregated_fisher = self.flModel.aggregate()
-
-            self.rootModel = copy.deepcopy(aggregated_model).to('cpu')
-
-            if aggregated_fisher is not None:
-                aggregated_fisher = copy.deepcopy(aggregated_fisher)
-                aggregated_fisher_path = self.aggregated_fisher_folder + f'/rootFisher-{testName}.pth'
-                save_fisher(aggregated_fisher, aggregated_fisher_path)
-        else:
-            self.rootModel = copy.deepcopy(self.flModel.aggregate()).to('cpu')
+        self.rootModel = copy.deepcopy(self.flModel.aggregate()).to('cpu')
 
         self.flModel.afterWork()
 
