@@ -1,6 +1,7 @@
 def pick_clients(self):
         pickedClients = []
         numCluster = 0
+        type_info_by_clients = None ## 
 
         if self.serverConfig['pickMode'] == 'random':
             from server.picking_clients.random_pick_clients import random_pick_clients
@@ -90,7 +91,7 @@ def pick_clients(self):
     
             num_clusters_to_pick = self.serverConfig.get('num_clusters_to_pick', 2)
             
-            pickedClients, numCluster = mixed_clustered_pick_clients(
+            pickedClients, numCluster, type_info_by_clients = mixed_clustered_pick_clients(
                 initial_data=initial_data,
                 rng=self.rng,
                 random_cluster_pick=False,
@@ -98,4 +99,4 @@ def pick_clients(self):
                 num_clusters_to_pick=num_clusters_to_pick)
 
         # self.update_picked_clients(pickedClients, numCluster)
-        return pickedClients, numCluster
+        return pickedClients, numCluster, type_info_by_clients

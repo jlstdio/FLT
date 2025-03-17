@@ -8,6 +8,7 @@ def mixed_clustered_pick_clients(initial_data, rng, random_cluster_pick=False, r
     clients_per_cluster = initial_data['updateClientsPerRound'] // num_clusters_to_pick
     picked_clusters = []
     all_picked_clients = []
+    type_info_by_clients = {}
     
     if random_cluster_pick:
         # Randomly pick multiple clusters without replacement
@@ -31,7 +32,10 @@ def mixed_clustered_pick_clients(initial_data, rng, random_cluster_pick=False, r
         picked_clients = rng.choice(cluster, clients_per_cluster, replace=False)
         all_picked_clients.extend(picked_clients)
         picked_clusters.append(cluster_idx)
+
+        for idx in picked_clients:
+            type_info_by_clients[idx] = cluster_idx
     
     print(f'clusters picked from -> {picked_clusters}')
     
-    return np.array(all_picked_clients), picked_clusters
+    return np.array(all_picked_clients), picked_clusters, type_info_by_clients

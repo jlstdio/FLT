@@ -26,6 +26,20 @@ class server_2way_fed(server_parent):
         super().__init__(rootModel, examinDataset_list, serverConfig, basicConfig, currentRound, flipboard,
                  turnFlag, sessionId, pickedClientsList, resultPath, wandbQueue, totalDistributionSet)
         print('server_2way_fed init')
+    
+    def root_model_init(self):
+        rootModelPath = self.basicConfig['rootModelFilePath']
+        os.makedirs(rootModelPath, exist_ok=True)
+        # self.rootModel = copy.deepcopy(self.reservedRootModel)
+        testName = self.basicConfig['testName']
+        
+        torch.save(self.rootModel.state_dict(), f'{rootModelPath}/main_rootModel-{testName}.pth')
+        torch.save(self.rootModel.state_dict(), f'{self.resultPath}/main_rootModel-{testName}.pth')
+
+        for i in range(self.numOfTypes):
+            torch.save(self.rootModel.state_dict(), f'{rootModelPath}/sub_{i}_rootModel-{testName}.pth')
+
+        del self.rootModel
 
     def run_FL(self):
         # initiate variables
@@ -86,18 +100,17 @@ class server_2way_fed(server_parent):
         aggregatedModelPath = self.basicConfig['aggregateFilePath']
         os.makedirs(aggregatedModelPath, exist_ok=True)
         testName = self.basicConfig['testName']
-        
-        ## TODO cluster info calculation 진행
-        self.cluster_info
 
         self.rootModel = copy.deepcopy(self.flModel.aggregate()).to('cpu')
 
         self.flModel.afterWork()
 
         # 5. 집계 후 기존 코드 계속
-        torch.save(self.rootModel.state_dict(), f'{aggregatedModelPath}/root_round{self.currentRound.value}.pth')
-        torch.save(self.rootModel.state_dict(), f'{rootModelPath}/rootModel-{testName}.pth')
-        torch.save(self.rootModel.state_dict(), f'{self.resultPath}/rootModel-{testName}.pth')
+        torch.save(self.rootModel.state_dict(), f'{aggregatedModelPath}/main_root_round{self.currentRound.value}.pth')
+        torch.save(self.rootModel.state_dict(), f'{rootModelPath}/main_rootModel-{testName}.pth')
+        torch.save(self.rootModel.state_dict(), f'{self.resultPath}/main_rootModel-{testName}.pth')
+        
+        # sub-root model은 aggregate시 진행함
 
         acc_summed = 0.0
 
@@ -109,7 +122,7 @@ class server_2way_fed(server_parent):
                 basicConfig=self.basicConfig,
                 serverConfig=self.serverConfig,
                 model=self.rootModel,
-                pthPath=f'{rootModelPath}/rootModel-{testName}.pth',
+                pthPath=f'{rootModelPath}/main_rootModel-{testName}.pth',
                 seed=self.seed,
                 curRound=self.currentRound.value,
                 scorePath=self.scorePath,
@@ -219,7 +232,7 @@ class server_2way_fed(server_parent):
         dltAllFiles(self.basicConfig['clientsNegotiationFolderPath'])
 
         print("negotiating...")
-        self.pickedClients, self.numCluster = pick_clients(self)
+        self.pickedClients, self.numCluster, self.type_info_by_clients = pick_clients(self)
         self.update_picked_clients(self.pickedClients, self.numCluster)
         
         self.roundStartTime = time.time_ns()  # log the round start time to track the round time

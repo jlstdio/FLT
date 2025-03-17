@@ -144,10 +144,11 @@ def server_type_loader(self, examinDataset):
         from server.fedOptimizer.fed_2way_avg import fed_2way_avg
 
         additional_info_dict = {
-            'cluster_info': self.cluster_info,
+            'cluster_info': self.type_info_by_clients,
             'picked_clients': self.pickedClients,
-            'num_cluster': self.numCluster
-        }
+            'rootModelFilePath': self.basicConfig['rootModelFilePath'],
+            'testName': self.basicConfig['testName']
+            }
 
         flModel = fed_2way_avg(self.reservedRootModel, self.cudaId, additional_info_dict)
 

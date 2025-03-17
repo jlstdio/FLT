@@ -1,7 +1,8 @@
 import json
 from collections import defaultdict
 from itertools import cycle
-
+import io
+from PIL import Image
 import numpy as np
 import random
 
@@ -15,6 +16,26 @@ types_info = {
 type_ratio = [0.5, 0.5]
 """
 
+def get_image_size(image_array):
+    """이미지의 크기를 바이트 단위로 계산"""
+    image = Image.fromarray(image_array.astype('uint8'))
+    buffer = io.BytesIO()
+    image.save(buffer, format="PNG")  # PNG format for lossless size calculation
+    size_bytes = len(buffer.getvalue())
+    return size_bytes
+
+def calculate_class_statistics(clientsDict, classes):
+    """클라이언트별 클래스 통계 계산"""
+    class_stats = {}
+    for client_id, data in clientsDict.items():
+        class_counts = {cls: 0 for cls in classes}
+        for cls, _ in data:
+            class_counts[cls] += 1
+        total = sum(class_counts.values())
+        class_ratios = {cls: count/total if total > 0 else 0 
+                       for cls, count in class_counts.items()}
+        class_stats[client_id] = {'counts': class_counts, 'ratios': class_ratios}
+    return class_stats
 
 def dirichletSplit(dataset_list, classes, total_clients_id_list, configPath, dataset_created_log_path, seed=1234):
     """
@@ -74,6 +95,9 @@ def dirichletSplit(dataset_list, classes, total_clients_id_list, configPath, dat
     clientsDict = {i: [] for i in total_clients_id_list}
     client_counts = {i: {idx_type: 0 for idx_type in range(len(dataset_list))} for i in total_clients_id_list}
 
+    # 이미지 크기 계산을 위한 딕셔너리
+    client_image_sizes = {i: defaultdict(list) for i in total_clients_id_list}
+
     # 데이터 분배 로직
     for idx_type, clients_id_list in enumerate(clients_list_by_type):
         alpha = config['clientsType'][idx_type]['alpha']
@@ -109,6 +133,10 @@ def dirichletSplit(dataset_list, classes, total_clients_id_list, configPath, dat
                     client_counts[client_id][idx_dataset] += num_data
                     start_idx = end_idx
 
+                    for data in selected_data:
+                        size_bytes = get_image_size(data)
+                        client_image_sizes[client_id][cls].append(size_bytes)
+
                 # 남은 데이터 처리
                 leftover_data_idxs = class_data_idxs[start_idx:]
                 if leftover_data_idxs.size > 0:
@@ -119,14 +147,38 @@ def dirichletSplit(dataset_list, classes, total_clients_id_list, configPath, dat
                         clientsDict[client_id].append((cls, data))
                         client_counts[client_id][idx_type] += 1
 
+    # 클래스별 통계 계산
+    class_stats = calculate_class_statistics(clientsDict, classes)
+
+    # 로그 파일 작성 부분 수정
     with open(dataset_created_log_path, 'w') as f:
         for client_id in total_clients_id_list:
             total_data = sum(client_counts[client_id].values())
             f.write(f"Client {client_id}:\n")
+            
+            # 데이터셋 타입별 통계
             for idx_type in range(len(dataset_list)):
                 count = client_counts[client_id][idx_type]
                 ratio = count / total_data if total_data > 0 else 0
                 f.write(f"  Dataset Type {idx_type}: {count} data, Ratio: {ratio:.4f}\n")
+            
+            # 클래스별 통계 및 이미지 크기 정보 추가
+            f.write("  Class distribution and sizes:\n")
+            for cls in classes:
+                count = class_stats[client_id]['counts'][cls]
+                ratio = class_stats[client_id]['ratios'][cls]
+                sizes = client_image_sizes[client_id][cls]
+                
+                if sizes:  # 해당 클래스의 데이터가 있는 경우
+                    avg_size = sum(sizes) / len(sizes)
+                    total_size = sum(sizes)
+                    f.write(f"    Class {cls}:\n")
+                    f.write(f"      Count: {count} data\n")
+                    f.write(f"      Ratio: {ratio:.4f}\n")
+                    f.write(f"      Average Size: {avg_size/1024:.2f} KB\n")
+                    f.write(f"      Total Size: {total_size/1024:.2f} KB\n")
+                    f.write(f"      Min Size: {min(sizes)/1024:.2f} KB\n")
+                    f.write(f"      Max Size: {max(sizes)/1024:.2f} KB\n")
             f.write("\n")
 
     return clientsDict

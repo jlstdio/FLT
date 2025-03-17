@@ -138,6 +138,16 @@ def create_dataset_dict(dataset_distribution_name, clientDataset_list, classes, 
                                             dataset_created_log_path=dataset_created_log_path,
                                             seed=seed)
 
+    elif dataset_distribution_name == 'dirichlet_vanilla_w_lossy_compress':
+        from dataPrepare.noniid_w_compression import dirichletSplit_lossy_compress
+        # (dataset_list, classes, total_clients_id_list, type_info, type_ratio, configPath, seed=1234):
+        clientsDatasetDict = dirichletSplit_lossy_compress(dataset_list=clientDataset_list,
+                                            classes=classes,
+                                            total_clients_id_list=clients_id_list,
+                                            configPath=dataConfigPath,
+                                            dataset_created_log_path=dataset_created_log_path,
+                                            seed=seed)
+
     elif dataset_distribution_name == 'dirichlet_strict_equal':
         # TODO: dirichlet_strict_equal 코드 수정하여야함
         '''

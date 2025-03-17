@@ -19,47 +19,43 @@ def average_weights(weights: List[Dict[str, torch.Tensor]]) -> Dict[str, torch.T
 class fed_2way_avg(fedOptParent):
     def __init__(self, rootModel, cudaId, additionalInfo=None):
         super().__init__(rootModel, cudaId, additionalInfo)
-        self.cluster_info = additionalInfo.get('cluster_info', None) if additionalInfo else None
-        self.picked_clients = additionalInfo.get('picked_clients', None) if additionalInfo else None
-        self.num_cluster = additionalInfo.get('num_cluster', None) if additionalInfo else None
         
     def aggregate_by_cluster(self):
-        """Aggregate models within each cluster separately"""
-        if not all([self.cluster_info, self.picked_clients, self.num_cluster]):
-            return
+        
+        type_info_by_clients =  self.additionalInfo['cluster_info']
+        rootModel = copy.deepcopy(self.rootModelStatic)
             
         # Group client models by cluster
         cluster_models = {}
-        for client_idx, model in enumerate(self.clientsModels):
-            client = self.picked_clients[client_idx]
-            cluster = self.num_cluster[client_idx]
-            
-            if cluster not in cluster_models:
-                cluster_models[cluster] = []
-            cluster_models[cluster].append(model)
-            
-        # Aggregate models within each cluster
-        sub_root_path = f'{self.resultPath}/sub_roots'
-        os.makedirs(sub_root_path, exist_ok=True)
+        for model, client_id in zip(self.clientsModels, self.clients_ids):
+            cluster_type = type_info_by_clients[client_id]
+
+            if cluster_type not in cluster_models:
+                cluster_models[cluster_type] = []
+            cluster_models[cluster_type].append(model)
+            print(f'[TEST] client_id: {client_id}, cluster_type: {cluster_type}')
         
         for cluster, models in cluster_models.items():
             # Average weights for this cluster
             cluster_weights = average_weights(models)
             
             # Create a new model instance for this cluster
-            sub_root = copy.deepcopy(self.rootModel)
+            sub_root = copy.deepcopy(rootModel)
             sub_root.load_state_dict(cluster_weights)
             
             # Save sub-root model for this cluster
-
-            rootModelPath = self.basicConfig['rootModelFilePath']
-            testName = self.basicConfig['testName']
+            rootModelPath = self.additionalInfo['rootModelFilePath']
+            testName = self.additionalInfo['testName']
             torch.save(
                 sub_root.state_dict(), 
-                f'{rootModelPath}/sub_{self.clientType}_rootModel-{testName}.pth'
+                f'{rootModelPath}/sub_{cluster}_rootModel-{testName}.pth'
             )
             
     def aggregate(self):
+
+        self.cluster_info = self.additionalInfo.get('cluster_info', None) if self.additionalInfo else None
+        self.picked_clients = self.additionalInfo.get('picked_clients', None) if self.additionalInfo else None        
+        
         # First, perform cluster-wise aggregation
         self.aggregate_by_cluster()
         

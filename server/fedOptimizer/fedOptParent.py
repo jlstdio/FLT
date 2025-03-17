@@ -20,6 +20,8 @@ class fedOptParent:
         self.resultRootModel = copy.deepcopy(self.rootModelStatic)
         self.clientsModels = []
         self.clientsLosses = []
+        self.clients_types = []
+        self.clients_ids = []
         self.max_retries = 10
         self.device = torch.device(f"cuda:{cudaId}" if is_available() else "cpu")
 
@@ -40,7 +42,16 @@ class fedOptParent:
         model.load_state_dict(model_state_dict)
 
         self.clientsModels.append(model.state_dict())
-        # self.clients_losses.append(client_loss)
+        file_name = path.split('/')[-1].split('.')[0]
+        client_id_from_name = int(file_name.split('_')[0])
+        
+        if self.additionalInfo['cluster_info'] is not None:
+            type_info_by_clients = self.additionalInfo['cluster_info']
+            self.clients_types.append(int(type_info_by_clients[client_id_from_name]))
+
+        self.clients_ids.append(int(client_id_from_name))
+
+        print(f'[TEST] client{client_id_from_name} of type {type_info_by_clients[client_id_from_name]}: ')
 
     def aggregate(self):
         pass

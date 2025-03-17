@@ -33,6 +33,10 @@ class client_2way_fed(client_parent):
                  wandbQueue)
                  
     def load_model(self):
+        self.model = self.model.to(self.device)
+        self.modelReserved = copy.deepcopy(self.model)
+        self.prox_model = self.model.to(self.device)
+        
         rootModelPath = self.basicConfig['rootModelFilePath']
         testName = self.basicConfig['testName']
         
@@ -43,9 +47,6 @@ class client_2way_fed(client_parent):
         sub_model_state_dict = torch.load(sub_rootModelPath, map_location=self.device, weights_only=True)
 
         self.model.load_state_dict(sub_model_state_dict)
-        self.model = self.model.to(self.device)
-        self.modelReserved = copy.deepcopy(self.model)
-
         self.prox_model.load_state_dict(main_model_state_dict)
 
     def train(self, epochs=10):

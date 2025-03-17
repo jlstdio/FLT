@@ -43,7 +43,7 @@ class server_parent(Process):
         self.cudaId += basicConfig['startingCuda']
         self.targetRound = serverConfig['flRound']
         self.reservedRootModel = copy.deepcopy(rootModel)
-        self.rootModel = None
+        self.rootModel = copy.deepcopy(self.reservedRootModel)
         self.flModel = None
         self.turnFlag = turnFlag
         self.sessionId = sessionId
@@ -95,15 +95,18 @@ class server_parent(Process):
         os.makedirs(self.basicConfig['receivedProfilePath'], exist_ok=True)
 
         # root model init
+        self.root_model_init()
+
+        print("Server online")
+
+    def root_model_init(self):
         rootModelPath = self.basicConfig['rootModelFilePath']
         os.makedirs(rootModelPath, exist_ok=True)
-        self.rootModel = copy.deepcopy(self.reservedRootModel)
+        # self.rootModel = copy.deepcopy(self.reservedRootModel)
         testName = self.basicConfig['testName']
         torch.save(self.rootModel.state_dict(), f'{rootModelPath}/rootModel-{testName}.pth')
         torch.save(self.rootModel.state_dict(), f'{self.resultPath}/rootModel-{testName}.pth')
         del self.rootModel
-
-        print("Server online")
 
     def __getstate__(self):
         state = self.__dict__.copy()

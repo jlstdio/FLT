@@ -39,7 +39,7 @@ class client_parent(Process):
         random.seed(seed)
 
         self.device = None
-        self.model = None
+        self.model = copy.deepcopy(model)
         self.optimizer = None
         self.flipboard = flipboard
         self.test_loader = None
@@ -53,7 +53,7 @@ class client_parent(Process):
         self.sessionId = sessionId
         self.turnFlag = turnFlag
         self.client_internalId = client_internalId
-        self.modelReserved = None
+        self.modelReserved = copy.deepcopy(self.model)
         self.round = 0
         self.wandbQueue = wandbQueue
         self.serverRound = serverRound
@@ -88,6 +88,9 @@ class client_parent(Process):
         print(f"Client {client_internalId} online")
     
     def load_model(self):
+        self.model = self.model.to(self.device)
+        self.modelReserved = copy.deepcopy(self.model)
+
         rootModelPath = self.basicConfig['rootModelFilePath']
         testName = self.basicConfig['testName']
         rootModelPath = f'{rootModelPath}/rootModel-{testName}.pth'
@@ -95,8 +98,6 @@ class client_parent(Process):
         model_state_dict = torch.load(rootModelPath, map_location=self.device, weights_only=True)
         
         self.model.load_state_dict(model_state_dict)
-        self.model = self.model.to(self.device)
-        self.modelReserved = copy.deepcopy(self.model)
 
     def loadData(self):
         try:
