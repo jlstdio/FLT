@@ -244,6 +244,42 @@ def client_type_loader(pickedClientsList,
                                           sessionId=sessionId,
                                           scorePath=scorePath,
                                           wandbQueue=wandbQueue))
+    
+    elif basicConfig['aggregate_mode'] == 'fed_2way_distillation':
+        from client.client_type.client_2way_fed_distillation import client_2way_fed_distillation
+
+        for i in pickedClientsList:
+            clients.append(client_2way_fed_distillation(client_internalId=i,
+                                          dataset=clientsDatasetDict[i],
+                                          networkConfig=networkConfig,
+                                          basicConfig=basicConfig,
+                                          clientType=typesPerClients[i],
+                                          config=clientConfig[int(typesPerClients[i])],
+                                          model=copy.deepcopy(modelToLoad),
+                                          serverRound=serverRound,
+                                          flipboard=flipboard,
+                                          turnFlag=turnFlag,
+                                          sessionId=sessionId,
+                                          scorePath=scorePath,
+                                          wandbQueue=wandbQueue))
+    
+    elif basicConfig['aggregate_mode'] == 'fed_2way_ewc':
+        from client.client_type.client_2way_ewc import client_2way_ewc
+
+        for i in pickedClientsList:
+            clients.append(client_2way_ewc(client_internalId=i,
+                                          dataset=clientsDatasetDict[i],
+                                          networkConfig=networkConfig,
+                                          basicConfig=basicConfig,
+                                          clientType=typesPerClients[i],
+                                          config=clientConfig[int(typesPerClients[i])],
+                                          model=copy.deepcopy(modelToLoad),
+                                          serverRound=serverRound,
+                                          flipboard=flipboard,
+                                          turnFlag=turnFlag,
+                                          sessionId=sessionId,
+                                          scorePath=scorePath,
+                                          wandbQueue=wandbQueue))
             
     else:
         return None

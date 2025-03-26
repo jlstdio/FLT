@@ -20,7 +20,7 @@ from server.util_server import *
 from util.util import dltAllFiles, loadData
 from server.server_operator.server_parent import server_parent
 
-class Server(server_parent):
+class server_vanilla(server_parent):
     def __init__(self, rootModel, examinDataset_list, serverConfig, basicConfig, currentRound, flipboard,
                  turnFlag, sessionId, pickedClientsList, resultPath, wandbQueue, totalDistributionSet):
         super().__init__(rootModel, examinDataset_list, serverConfig, basicConfig, currentRound, flipboard,
@@ -215,7 +215,7 @@ class Server(server_parent):
         dltAllFiles(self.basicConfig['clientsNegotiationFolderPath'])
 
         print("negotiating...")
-        self.pickedClients, self.numCluster = pick_clients(self)
+        self.pickedClients, self.numCluster, type_info_by_clients = pick_clients(self)
         self.update_picked_clients(self.pickedClients, self.numCluster)
         
         self.roundStartTime = time.time_ns()  # log the round start time to track the round time

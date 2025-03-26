@@ -97,7 +97,7 @@ class server_parent(Process):
         # root model init
         self.root_model_init()
 
-        print("Server online")
+        print("Server online: parent")
 
     def root_model_init(self):
         rootModelPath = self.basicConfig['rootModelFilePath']

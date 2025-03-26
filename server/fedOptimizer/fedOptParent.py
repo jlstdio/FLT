@@ -45,13 +45,14 @@ class fedOptParent:
         file_name = path.split('/')[-1].split('.')[0]
         client_id_from_name = int(file_name.split('_')[0])
         
-        if self.additionalInfo['cluster_info'] is not None:
-            type_info_by_clients = self.additionalInfo['cluster_info']
-            self.clients_types.append(int(type_info_by_clients[client_id_from_name]))
+        if self.additionalInfo is not None:
+            if 'cluster_info' in self.additionalInfo.keys():
+                type_info_by_clients = self.additionalInfo['cluster_info']
+                self.clients_types.append(int(type_info_by_clients[client_id_from_name]))
 
         self.clients_ids.append(int(client_id_from_name))
 
-        print(f'[TEST] client{client_id_from_name} of type {type_info_by_clients[client_id_from_name]}: ')
+        # print(f'[TEST] client{client_id_from_name} of type {type_info_by_clients[client_id_from_name]}: ')
 
     def aggregate(self):
         pass

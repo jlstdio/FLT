@@ -5,9 +5,9 @@ import time
 from dataPrepare.data_prepare_manager import create_dataset_dict, select_dataset
 from dataPrepare.noniid import *
 from network.FLNetwork import FLNetwork
-from server.server import Server
 import json
 import torch
+from server.server_operator.server_vanilla import server_vanilla
 from util.util import showDistribution, dltAllFiles
 from util.wandbClient import WandbClient
 
@@ -73,6 +73,7 @@ def runner(networkConfigPath, dataConfigPath):
     dataset_classes = None
 
     for idx, (dataset_name) in enumerate(dataset_list):
+        print(f"Loading {dataset_name} dataset")
         client_subset_ratio = data_config['type_ratio'][idx]
         client_dataset, server_TestDataset, dataset_classes = select_dataset(dataset_name=dataset_name,
                                                                              client_subset_start_point=client_subset_start_point,
@@ -145,7 +146,7 @@ def runner(networkConfigPath, dataConfigPath):
     serverRound, flipboard, turnFlag, sessionId, pickedClients = network.getSharedInfo()
 
     modelToServer = copy.deepcopy(modelToLoad)
-    server = Server(rootModel=modelToServer,
+    server = server_vanilla(rootModel=modelToServer,
                     examinDataset_list=serverTestDataset_list,
                     serverConfig=serverConfig,
                     basicConfig=basicConfig,
@@ -189,29 +190,11 @@ if __name__ == "__main__":
     networkConfigRoot = './config/networkConfig'
     dataConfigRoot = './config/datasetConfig'
 
-    networkConfigPath_prefix = networkConfigRoot + '/2-step_clustered_FL/primary_step_infra-cluster_aggregation'
+    networkConfigPath_prefix = networkConfigRoot + '/2way_FL'
 
-    networkConfig_PathList = [f'{networkConfigPath_prefix}/picking_10clients/jg_10c_primary_step_infra-cluster.json',
-                              f'{networkConfigPath_prefix}/picking_10clients/jp_10c_primary_step_infra-cluster.json',
-                              f'{networkConfigPath_prefix}/picking_10clients/jo_10c_primary_step_infra-cluster.json',
-                              f'{networkConfigPath_prefix}/picking_10clients/lp_10c_primary_step_infra-cluster.json',
-                              f'{networkConfigPath_prefix}/picking_10clients/bp_10c_primary_step_infra-cluster.json',
-                              f'{networkConfigPath_prefix}/picking_10clients/bs_10c_primary_step_infra-cluster.json',
-                              f'{networkConfigPath_prefix}/picking_10clients/r1_10c_primary_step_infra-cluster.json',
-                              f'{networkConfigPath_prefix}/picking_10clients/r2_10c_primary_step_infra-cluster.json',
-                              f'{networkConfigPath_prefix}/picking_10clients/r3_10c_primary_step_infra-cluster.json',
-                              f'{networkConfigPath_prefix}/picking_10clients/r4_10c_primary_step_infra-cluster.json']
+    networkConfig_PathList = [f'{networkConfigPath_prefix}/fed_avg_RP.json']
 
-    dataConfig_PathList = [f'{dataConfigRoot}/dirichlet_by_num_of_types/dataConfig_dirichlet_1type_fraction.json',
-                           f'{dataConfigRoot}/dirichlet_by_num_of_types/dataConfig_dirichlet_1type_fraction.json',
-                           f'{dataConfigRoot}/dirichlet_by_num_of_types/dataConfig_dirichlet_1type_fraction.json',
-                           f'{dataConfigRoot}/dirichlet_by_num_of_types/dataConfig_dirichlet_1type_fraction.json',
-                           f'{dataConfigRoot}/dirichlet_by_num_of_types/dataConfig_dirichlet_1type_fraction.json',
-                           f'{dataConfigRoot}/dirichlet_by_num_of_types/dataConfig_dirichlet_1type_fraction.json',
-                           f'{dataConfigRoot}/dirichlet_by_num_of_types/dataConfig_dirichlet_1type_fraction.json',
-                           f'{dataConfigRoot}/dirichlet_by_num_of_types/dataConfig_dirichlet_1type_fraction.json',
-                           f'{dataConfigRoot}/dirichlet_by_num_of_types/dataConfig_dirichlet_1type_fraction.json',
-                           f'{dataConfigRoot}/dirichlet_by_num_of_types/dataConfig_dirichlet_1type_fraction.json']
+    dataConfig_PathList = [f'{dataConfigRoot}/dirichlet_by_num_of_types/dataConfig_dirichlet_10types.json']
 
     for network_configPath, data_configPath in zip(networkConfig_PathList, dataConfig_PathList):
         print(f'running with {network_configPath} | {data_configPath}')

@@ -25,6 +25,7 @@ class server_2way_fed(server_parent):
                  turnFlag, sessionId, pickedClientsList, resultPath, wandbQueue, totalDistributionSet):
         super().__init__(rootModel, examinDataset_list, serverConfig, basicConfig, currentRound, flipboard,
                  turnFlag, sessionId, pickedClientsList, resultPath, wandbQueue, totalDistributionSet)
+        
         print('server_2way_fed init')
     
     def root_model_init(self):

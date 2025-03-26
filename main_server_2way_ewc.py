@@ -174,7 +174,6 @@ def cleanUp_everything(basicConfig):
     dltAllFiles(basicConfig['receivedPthPath'])
     dltAllFiles(basicConfig['receivedDataPath'])
     dltAllFiles(basicConfig['rootModelFilePath'])
-    dltAllFiles(basicConfig['latest_sub_roots_path'])
     dltAllFiles(basicConfig['clientsMetadataFolderPath'])
     dltAllFiles(basicConfig['clientsNegotiationFolderPath'])
     dltAllFiles(basicConfig['receivedProfilePath'])
@@ -187,14 +186,22 @@ def cleanUp_everything(basicConfig):
 if __name__ == "__main__":
     multiprocessing.set_start_method('spawn')
 
-    networkConfigRoot = './config/networkConfig/2way_FL/distillation'
-    dataConfigRoot = './config/datasetConfig'
+    networkConfigRoot = './config/networkConfig/2way_FL/ewc'
+    dataConfigRoot = './config/datasetConfig/dirichlet_by_num_of_types'
 
     networkConfigPath_prefix = networkConfigRoot
 
-    networkConfig_PathList = [f'{networkConfigPath_prefix}/fed_2way_distillation_2CP_mu 1e-2.json']
+    networkConfig_PathList = [f'{networkConfigPath_prefix}/fed_2way_ewc_100.json',
+                              f'{networkConfigPath_prefix}/fed_2way_ewc_0.1.json',
+                              f'{networkConfigPath_prefix}/fed_2way_ewc_1.json',
+                              f'{networkConfigPath_prefix}/fed_2way_ewc_10.json',
+                              f'{networkConfigPath_prefix}/fed_2way_ewc_1000.json']
 
-    dataConfig_PathList = [f'{dataConfigRoot}/dirichlet_by_num_of_types/dataConfig_dirichlet_10types.json']
+    dataConfig_PathList = [f'{dataConfigRoot}/dataConfig_dirichlet_10types.json',
+                           f'{dataConfigRoot}/dataConfig_dirichlet_10types.json',
+                           f'{dataConfigRoot}/dataConfig_dirichlet_10types.json',
+                           f'{dataConfigRoot}/dataConfig_dirichlet_10types.json',
+                           f'{dataConfigRoot}/dataConfig_dirichlet_10types.json']
 
     for network_configPath, data_configPath in zip(networkConfig_PathList, dataConfig_PathList):
         print(f'running with {network_configPath} | {data_configPath}')

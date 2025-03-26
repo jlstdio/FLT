@@ -187,12 +187,12 @@ def cleanUp_everything(basicConfig):
 if __name__ == "__main__":
     multiprocessing.set_start_method('spawn')
 
-    networkConfigRoot = './config/networkConfig/2way_FL/distillation'
+    networkConfigRoot = './config/networkConfig/2way_FL/vanilla'
     dataConfigRoot = './config/datasetConfig'
 
     networkConfigPath_prefix = networkConfigRoot
 
-    networkConfig_PathList = [f'{networkConfigPath_prefix}/fed_2way_distillation_2CP_mu 1e-2.json']
+    networkConfig_PathList = [f'{networkConfigPath_prefix}/fed_2way_avg_2CP_mu1e-3_real_cifar.json']
 
     dataConfig_PathList = [f'{dataConfigRoot}/dirichlet_by_num_of_types/dataConfig_dirichlet_10types.json']
 

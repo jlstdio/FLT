@@ -147,7 +147,37 @@ def server_type_loader(self, examinDataset):
             'cluster_info': self.type_info_by_clients,
             'picked_clients': self.pickedClients,
             'rootModelFilePath': self.basicConfig['rootModelFilePath'],
-            'testName': self.basicConfig['testName']
+            'latest_sub_roots_path': self.basicConfig['latest_sub_roots_path'],
+            'resultPath': self.resultPath,
+            'testName': self.basicConfig['testName'],
+            'global_mix_ratio': self.serverConfig['global_mix_ratio'],
+            }
+
+        flModel = fed_2way_avg(self.reservedRootModel, self.cudaId, additional_info_dict)
+    
+    elif self.basicConfig['aggregate_mode'] == 'fed_2way_distillation':
+        from server.fedOptimizer.fed_2way_avg import fed_2way_avg
+
+        additional_info_dict = {
+            'cluster_info': self.type_info_by_clients,
+            'picked_clients': self.pickedClients,
+            'rootModelFilePath': self.basicConfig['rootModelFilePath'],
+            'latest_sub_roots_path': self.basicConfig['latest_sub_roots_path'],
+            'testName': self.basicConfig['testName'],
+            'global_mix_ratio': self.serverConfig['global_mix_ratio'],
+            }
+
+        flModel = fed_2way_avg(self.reservedRootModel, self.cudaId, additional_info_dict)
+    
+    elif self.basicConfig['aggregate_mode'] == 'fed_2way_ewc':
+        from server.fedOptimizer.fed_2way_avg import fed_2way_avg
+
+        additional_info_dict = {
+            'cluster_info': self.type_info_by_clients,
+            'picked_clients': self.pickedClients,
+            'rootModelFilePath': self.basicConfig['rootModelFilePath'],
+            'testName': self.basicConfig['testName'],
+            'global_mix_ratio': self.serverConfig['global_mix_ratio'],
             }
 
         flModel = fed_2way_avg(self.reservedRootModel, self.cudaId, additional_info_dict)

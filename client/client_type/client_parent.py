@@ -80,6 +80,8 @@ class client_parent(Process):
 
         self.clientProfile = None
         self.scorePath = scorePath + f'/{self.client_internalId}'
+        self.client_recent_pth_path = os.path.join(scorePath, 'recent_model')
+        os.makedirs(self.client_recent_pth_path, exist_ok=True)
         self.heatmap_dir = os.path.join(self.scorePath, "client_heatmaps", f"client_{client_internalId}")
         os.makedirs(self.heatmap_dir, exist_ok=True)
 
@@ -392,6 +394,8 @@ class client_parent(Process):
 
         clientModelToServer = self.basicConfig['receivedPthPath']
         torch.save(self.model.state_dict(), f'{clientModelToServer}/{self.client_internalId}_round{self.round}.pth')
+
+        torch.save(self.model.state_dict(), f'{self.client_recent_pth_path}/client_{self.client_internalId}.pth')
 
         """ ---- [OPEN] FINE TUNED MODEL VALIDATION AFTER TRAIN """
         valid_acc, valid_loss = self.validate(('after-test'))

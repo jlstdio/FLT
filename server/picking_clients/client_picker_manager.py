@@ -94,7 +94,7 @@ def pick_clients(self):
             pickedClients, numCluster, type_info_by_clients = mixed_clustered_pick_clients(
                 initial_data=initial_data,
                 rng=self.rng,
-                random_cluster_pick=False,
+                random_cluster_pick=True,
                 rounds_per_cluster_change=self.serverConfig['update_cluster_every'],
                 num_clusters_to_pick=num_clusters_to_pick)
 
