@@ -39,137 +39,168 @@ def calculate_class_statistics(clientsDict, classes):
 
 def dirichletSplit(dataset_list, classes, total_clients_id_list, configPath, dataset_created_log_path, seed=1234):
     """
-    데이터셋을 Dirichlet 분할 방식으로 클라이언트에 할당하고,
-    각 클라이언트별 데이터셋 타입별 데이터 수와 비율을 텍스트 파일로 저장합니다.
-
-    Parameters:
-    - dataset_list: 각 데이터셋 타입별 데이터 리스트
-    - classes: 데이터의 클래스 목록
-    - total_clients_id_list: 모든 클라이언트 ID 리스트
-    - configPath: 설정 파일의 경로 (JSON 형식)
-    - outputTxtPath: 결과를 저장할 텍스트 파일의 경로
-    - seed: 랜덤 시드 (기본값: 1234)
-
-    Returns:
-    - clientsDict: 클라이언트별 할당된 데이터 딕셔너리
+    데이터셋들을 'dataset_mixing_info'에 정의된 비율대로 섞은 뒤,
+    클라이언트 타입별(alpha 파라미터) Dirichlet 분포 방식으로 각 클라이언트에게 할당하는 함수.
     """
     np.random.seed(seed)
     random.seed(seed)
 
-    # 설정 파일 로드
+    # Initialize tracking dictionaries for metadata
+    client_counts = {i: {idx_type: 0 for idx_type in range(len(dataset_list))} 
+                    for i in total_clients_id_list}
+    client_image_sizes = {i: defaultdict(list) for i in total_clients_id_list}
+
+     # 설정 파일 로드
     with open(configPath, 'r') as file:
         config = json.load(file)
 
-    type_info = config['dataset_mixing_info']
-    type_ratio = config['type_ratio']
+    type_info = config['dataset_mixing_info']  # 예: { "0": [0.1,0.1,...], "1": [...], ... }
+    data_subset_ratio = config['data_subset_ratio']          # 예: [0.12, 0.12, ...] 등
+    client_type_ratio = config['client_type_ratio']          # 예: [0.12, 0.12, ...] 등
+    clients_type_config = config['clientsType']  # 예: [ {"numberOfClients":12,"alpha":0.25}, ... ]
 
-    print("type_info")
-    print(type_info)
+    # 클라이언트 타입 수(M)와 데이터셋 타입 수(T)
+    M = len(client_type_ratio)
+    T = len(dataset_list)
 
-    print("type_ratio")
-    print(type_ratio)
+    # (label, data) 형태로 변환 (혹은 이미 리스트라면 생략 가능)
+    dataset_list = [list(ds) for ds in dataset_list]
 
-    # 데이터셋 타입별 데이터 분할
-    dataset_fraction_list = {idx_type: [] for idx_type in range(len(dataset_list))}
-    for idx_type, dataset in enumerate(dataset_list):
-        dataset = list(dataset)
-        total_size_dataset = len(dataset)
-        past_idx = 0
-        for ratio in type_info[str(idx_type)]:
-            size_dataset_fraction_idx = past_idx + int(total_size_dataset * ratio)
-            dataset_fraction_list[idx_type].append(dataset[past_idx:size_dataset_fraction_idx])
-            past_idx = size_dataset_fraction_idx
+    # ---------------------------------------
+    # 1) 데이터셋 분할: 각 "클라이언트 타입 i"마다
+    #    dataset_mixing_info[str(i)](길이 T)를 사용하여
+    #    여러 데이터셋에서 지정된 비율만큼씩 모음
+    # ---------------------------------------
+    # dataset_fraction_list[i]에는 "클라이언트 타입 i"가 가져갈 전체 샘플이 누적됨.
+    dataset_fraction_list = [[] for _ in range(M)]
 
-    # 클라이언트 리스트를 타입 비율에 따라 분할
-    if not np.isclose(sum(type_ratio), 1.0):
-        raise ValueError("type_ratio의 합이 1이 아닙니다.")
+    # 각 데이터셋 타입별로, "이미 뗀(슬라이스한) 위치"를 추적 (서로 겹치지 않게)
+    next_slice_start = [0] * T
 
+    for i in range(M):
+        # 클라이언트 타입 i가 각각의 데이터셋 타입에서 얼마만큼을 사용할지 비율
+        mixing_vector = type_info[str(i)]  # 길이 T (T개의 비율 합이 1.0일 수도 있고, 특정 구성일 수도 있음)
+
+        for t in range(T):
+            ds_t = dataset_list[t]
+            total_size_t = len(ds_t)
+
+            # t번 데이터셋에서 mixing_vector[t] 비율만큼 슬라이스
+            chunk_size_t = int(total_size_t * mixing_vector[t])
+
+            start_idx = next_slice_start[t]
+            end_idx = start_idx + chunk_size_t
+
+            sub_chunk = ds_t[start_idx:end_idx]
+
+            # 클라이언트 타입 i의 목록에 추가
+            dataset_fraction_list[i].extend(sub_chunk)
+
+            # 이미 할당한 구간만큼 슬라이스 포인터 갱신
+            next_slice_start[t] = end_idx
+
+    # ---------------------------------------
+    # 2) 클라이언트 타입별로, 실제 클라이언트들을 data_subset_ratio에 따라 그룹화
+    #    예: data_subset_ratio=[0.5,0.5]이면 전체의 절반은 0번 타입 클라이언트, 절반은 1번 타입 클라이언트
+    # ---------------------------------------
+    if not np.isclose(sum(client_type_ratio), 1.0):
+        raise ValueError("client_type_ratio의 합이 1이 아닙니다.")
+
+    total_num_clients = len(total_clients_id_list)
+
+    # 각 타입별로 클라이언트 ID를 나누어 담을 리스트
     clients_list_by_type = []
-    current_idx = 0
-    for ratio in type_ratio:
-        next_idx = current_idx + int(len(total_clients_id_list) * ratio)
-        clients_list_by_type.append(total_clients_id_list[current_idx:next_idx])
-        current_idx = next_idx
 
-    # 클라이언트별 데이터 분배 및 카운트 초기화
-    clientsDict = {i: [] for i in total_clients_id_list}
-    client_counts = {i: {idx_type: 0 for idx_type in range(len(dataset_list))} for i in total_clients_id_list}
+    start_idx = 0
+    for i in range(M):
+        # 이 타입에 해당하는 클라이언트 수
+        num_clients_i = int(total_num_clients * client_type_ratio[i])
 
-    # 이미지 크기 계산을 위한 딕셔너리
-    client_image_sizes = {i: defaultdict(list) for i in total_clients_id_list}
+        # 마지막 타입이라면 나머지를 모두 할당(소수점 반올림 오차 대비)
+        if i == M - 1:
+            num_clients_i = total_num_clients - start_idx
 
-    # 데이터 분배 로직
-    for idx_type, clients_id_list in enumerate(clients_list_by_type):
-        alpha = config['clientsType'][idx_type]['alpha']
-        class_distribution = {
-            cls: np.random.dirichlet([alpha] * len(clients_id_list))
-            for cls in classes
-        }
+        subset = total_clients_id_list[start_idx : start_idx + num_clients_i]
+        clients_list_by_type.append(subset)
+        start_idx += num_clients_i
 
-        for idx_dataset, (dataset_list_by_ratio) in enumerate(dataset_fraction_list[idx_type]):
-            class_data = {cls: [] for cls in classes}
-            for cls, data in dataset_list_by_ratio:
-                class_data[cls].append(data)
+    # ---------------------------------------
+    # 3) 각 타입 i 내부에서 'dirichlet 분포(alpha)'를 이용하여
+    #    타입 i가 가진 전체 데이터(dataset_fraction_list[i])를
+    #    다시 각 클라이언트에게 분배
+    # ---------------------------------------
 
-            for cls in classes:
-                num_class_data = len(class_data[cls])
-                if num_class_data == 0:
-                    continue
-                class_data_idxs = np.arange(num_class_data)
-                np.random.shuffle(class_data_idxs)
+    clientsDict = {client_id: [] for client_id in total_clients_id_list}
 
-                # 각 클라이언트별로 할당할 데이터 수 계산
-                class_data_per_client = (class_distribution[cls] * num_class_data).astype(int)
-                start_idx = 0
-                for client_id in clients_id_list:
-                    client_idx = clients_id_list.index(client_id)
-                    num_data = class_data_per_client[client_idx]
-                    if num_data == 0:
-                        continue
-                    end_idx = start_idx + num_data
-                    selected_data_idxs = class_data_idxs[start_idx:end_idx]
-                    selected_data = [class_data[cls][i] for i in selected_data_idxs]
-                    clientsDict[client_id].extend(zip([cls] * num_data, selected_data))
-                    client_counts[client_id][idx_dataset] += num_data
-                    start_idx = end_idx
+    for i, cids in enumerate(clients_list_by_type):
+        if len(cids) == 0:
+            continue
 
-                    for data in selected_data:
-                        size_bytes = get_image_size(data)
-                        client_image_sizes[client_id][cls].append(size_bytes)
+        alpha = clients_type_config[i]['alpha']
+        sub_dataset = dataset_fraction_list[i]
 
-                # 남은 데이터 처리
-                leftover_data_idxs = class_data_idxs[start_idx:]
-                if leftover_data_idxs.size > 0:
-                    leftover_data = [class_data[cls][i] for i in leftover_data_idxs]
-                    client_cycle = cycle(clients_id_list)
-                    for data in leftover_data:
-                        client_id = next(client_cycle)
-                        clientsDict[client_id].append((cls, data))
-                        client_counts[client_id][idx_type] += 1
+        class_data_map = {cls: [] for cls in classes}
+        for (cls, data) in sub_dataset:
+            class_data_map[cls].append(data)
 
-    # 클래스별 통계 계산
+        class_distribution = {}
+        for cls in classes:
+            class_distribution[cls] = np.random.dirichlet([alpha] * len(cids))
+
+        for cls in classes:
+            data_list = class_data_map[cls]
+            np.random.shuffle(data_list)
+            num_data_cls = len(data_list)
+
+            portion = (class_distribution[cls] * num_data_cls).astype(int)
+            assigned_sum = np.sum(portion)
+            leftover = num_data_cls - assigned_sum
+
+            current_idx = 0
+            for idx_client, client_id in enumerate(cids):
+                cnt = portion[idx_client]
+                batch = data_list[current_idx: current_idx + cnt]
+                
+                for d in batch:
+                    clientsDict[client_id].append((cls, d))
+                    client_counts[client_id][i] += 1  # Track count by dataset type
+                    size_bytes = get_image_size(d)  # Calculate image size
+                    client_image_sizes[client_id][cls].append(size_bytes)
+                current_idx += cnt
+
+            if leftover > 0:
+                leftover_data = data_list[current_idx:]
+                cyc = cycle(cids)
+                for d in leftover_data:
+                    leftover_client_id = next(cyc)
+                    clientsDict[leftover_client_id].append((cls, d))
+                    client_counts[leftover_client_id][i] += 1
+                    size_bytes = get_image_size(d)
+                    client_image_sizes[leftover_client_id][cls].append(size_bytes)
+
+    # Calculate class statistics
     class_stats = calculate_class_statistics(clientsDict, classes)
 
-    # 로그 파일 작성 부분 수정
+    # Write detailed log with metadata
     with open(dataset_created_log_path, 'w') as f:
         for client_id in total_clients_id_list:
             total_data = sum(client_counts[client_id].values())
             f.write(f"Client {client_id}:\n")
             
-            # 데이터셋 타입별 통계
+            # Dataset type statistics
             for idx_type in range(len(dataset_list)):
                 count = client_counts[client_id][idx_type]
                 ratio = count / total_data if total_data > 0 else 0
                 f.write(f"  Dataset Type {idx_type}: {count} data, Ratio: {ratio:.4f}\n")
             
-            # 클래스별 통계 및 이미지 크기 정보 추가
+            # Class distribution and size statistics
             f.write("  Class distribution and sizes:\n")
             for cls in classes:
                 count = class_stats[client_id]['counts'][cls]
                 ratio = class_stats[client_id]['ratios'][cls]
                 sizes = client_image_sizes[client_id][cls]
                 
-                if sizes:  # 해당 클래스의 데이터가 있는 경우
+                if sizes:
                     avg_size = sum(sizes) / len(sizes)
                     total_size = sum(sizes)
                     f.write(f"    Class {cls}:\n")
@@ -182,7 +213,6 @@ def dirichletSplit(dataset_list, classes, total_clients_id_list, configPath, dat
             f.write("\n")
 
     return clientsDict
-
 
 
 def dirichlet_equal_split(dataset, classes, alpha, clients_id_list, seed):

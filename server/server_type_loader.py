@@ -151,6 +151,7 @@ def server_type_loader(self, examinDataset):
             'resultPath': self.resultPath,
             'testName': self.basicConfig['testName'],
             'global_mix_ratio': self.serverConfig['global_mix_ratio'],
+            'curRound': self.currentRound.value
             }
 
         flModel = fed_2way_avg(self.reservedRootModel, self.cudaId, additional_info_dict)

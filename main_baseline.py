@@ -74,7 +74,7 @@ def runner(networkConfigPath, dataConfigPath):
 
     for idx, (dataset_name) in enumerate(dataset_list):
         print(f"Loading {dataset_name} dataset")
-        client_subset_ratio = data_config['type_ratio'][idx]
+        client_subset_ratio = data_config['data_subset_ratio'][idx]
         client_dataset, server_TestDataset, dataset_classes = select_dataset(dataset_name=dataset_name,
                                                                              client_subset_start_point=client_subset_start_point,
                                                                              client_subset_ratio=client_subset_ratio,
@@ -192,7 +192,7 @@ if __name__ == "__main__":
 
     networkConfigPath_prefix = networkConfigRoot + '/2way_FL'
 
-    networkConfig_PathList = [f'{networkConfigPath_prefix}/fed_avg_RP.json']
+    networkConfig_PathList = [f'{networkConfigPath_prefix}/fed_avg_RP_old.json']
 
     dataConfig_PathList = [f'{dataConfigRoot}/dirichlet_by_num_of_types/dataConfig_dirichlet_10types.json']
 

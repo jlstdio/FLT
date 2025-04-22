@@ -94,7 +94,13 @@ class server_vanilla(server_parent):
         torch.save(self.rootModel.state_dict(), f'{aggregatedModelPath}/root_round{self.currentRound.value}.pth')
         torch.save(self.rootModel.state_dict(), f'{rootModelPath}/rootModel-{testName}.pth')
         torch.save(self.rootModel.state_dict(), f'{self.resultPath}/rootModel-{testName}.pth')
-
+        
+        '''
+        IMPLENETATION JUST FOR EXPERIMENTAL PURPOSES
+        '''
+        os.makedirs(f'{self.resultPath}/history', exist_ok=True)
+        torch.save(self.rootModel.state_dict(), f'{self.resultPath}/history/main_rootModel_round{self.currentRound.value}.pth')
+        
         acc_summed = 0.0
 
         for idx, (dataset_select) in enumerate(self.examinDataset_list):

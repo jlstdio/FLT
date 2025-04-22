@@ -73,7 +73,7 @@ def runner(networkConfigPath, dataConfigPath):
     dataset_classes = None
 
     for idx, (dataset_name) in enumerate(dataset_list):
-        client_subset_ratio = data_config['type_ratio'][idx]
+        client_subset_ratio = data_config['data_subset_ratio'][idx]
         client_dataset, server_TestDataset, dataset_classes = select_dataset(dataset_name=dataset_name,
                                                                              client_subset_start_point=client_subset_start_point,
                                                                              client_subset_ratio=client_subset_ratio,

@@ -394,8 +394,14 @@ class client_parent(Process):
 
         clientModelToServer = self.basicConfig['receivedPthPath']
         torch.save(self.model.state_dict(), f'{clientModelToServer}/{self.client_internalId}_round{self.round}.pth')
-
         torch.save(self.model.state_dict(), f'{self.client_recent_pth_path}/client_{self.client_internalId}.pth')
+
+        '''
+        IMPLENENTATION JUST FOF EXPERIMENT
+        '''
+        os.makedirs(f'{self.client_recent_pth_path}/history', exist_ok=True)
+        torch.save(self.model.state_dict(), f'{self.client_recent_pth_path}/history/client_{self.client_internalId}_round{self.round}.pth')
+
 
         """ ---- [OPEN] FINE TUNED MODEL VALIDATION AFTER TRAIN """
         valid_acc, valid_loss = self.validate(('after-test'))

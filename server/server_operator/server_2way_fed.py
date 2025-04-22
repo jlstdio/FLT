@@ -110,6 +110,12 @@ class server_2way_fed(server_parent):
         torch.save(self.rootModel.state_dict(), f'{aggregatedModelPath}/main_root_round{self.currentRound.value}.pth')
         torch.save(self.rootModel.state_dict(), f'{rootModelPath}/main_rootModel-{testName}.pth')
         torch.save(self.rootModel.state_dict(), f'{self.resultPath}/main_rootModel-{testName}.pth')
+
+        '''
+        IMPLENETATION JUST FOR EXPERIMENTAL PURPOSES
+        '''
+        os.makedirs(f'{self.resultPath}/history', exist_ok=True)
+        torch.save(self.rootModel.state_dict(), f'{self.resultPath}/history/main_rootModel_round{self.currentRound.value}.pth')
         
         # sub-root model은 aggregate시 진행함
 

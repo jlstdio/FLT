@@ -8,6 +8,7 @@ from network.FLNetwork import FLNetwork
 import json
 import torch
 from server.server_operator.server_2way_fed import server_2way_fed
+from server.server_operator.server_vanilla import server_vanilla
 from util.util import showDistribution, dltAllFiles
 from util.wandbClient import WandbClient
 
@@ -145,7 +146,7 @@ def runner(networkConfigPath, dataConfigPath):
     serverRound, flipboard, turnFlag, sessionId, pickedClients = network.getSharedInfo()
 
     modelToServer = copy.deepcopy(modelToLoad)
-    server = server_2way_fed(rootModel=modelToServer,
+    server = server_vanilla(rootModel=modelToServer,
                              examinDataset_list=serverTestDataset_list,
                             serverConfig=serverConfig,
                             basicConfig=basicConfig,
@@ -187,14 +188,14 @@ def cleanUp_everything(basicConfig):
 if __name__ == "__main__":
     multiprocessing.set_start_method('spawn')
 
-    networkConfigRoot = './config/networkConfig/2way_FL/vanilla'
+    networkConfigRoot = './config/networkConfig/2way_FL/comparison'
     dataConfigRoot = './config/datasetConfig'
 
     networkConfigPath_prefix = networkConfigRoot
 
-    networkConfig_PathList = [f'{networkConfigPath_prefix}/fed_2way_avg_2CP_mu1e-3.json']
+    networkConfig_PathList = [f'{networkConfigPath_prefix}/fed_avg_10type_at_once.json']
 
-    dataConfig_PathList = [f'{dataConfigRoot}/dirichlet_by_num_of_types/dataConfig_dirichlet_10types.json']
+    dataConfig_PathList = [f'{dataConfigRoot}/dirichlet_by_num_of_types/dataConfig_dirichlet_1type_all.json']
 
     for network_configPath, data_configPath in zip(networkConfig_PathList, dataConfig_PathList):
         print(f'running with {network_configPath} | {data_configPath}')

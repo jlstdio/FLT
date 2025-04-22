@@ -121,6 +121,12 @@ class fed_2way_avg(fedOptParent):
             saved_pth_path = self.additionalInfo['resultPath'] + '/score/server/sub_root_models'
             os.makedirs(saved_pth_path, exist_ok=True)
             torch.save(sub_root.state_dict(), f'{saved_pth_path}/sub_{cluster}_rootModel.pth')
+            '''
+            IMPLEMENTATION JUST FOR EXPERIEMENTAL PURPOSES
+            '''
+            round = self.additionalInfo['curRound']
+            os.makedirs(f'{saved_pth_path}/history', exist_ok=True)
+            torch.save(sub_root.state_dict(), f'{saved_pth_path}/history/sub_{cluster}_round{round}_rootModel.pth')
             
             # Update latest sub-root
             self.update_latest_sub_roots(cluster, sub_root.state_dict())
