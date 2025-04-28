@@ -13,6 +13,9 @@ def server_type_loader(self, examinDataset):
         from server.fedOptimizer.fedAvg import fedAvg
         flModel = fedAvg(self.reservedRootModel, self.cudaId)
 
+    elif self.basicConfig['aggregate_mode'] == 'fed_feature_wise_weighted_avg':
+        from server.fedOptimizer.fed_feature_wise_weighted_avg import fed_feature_wise_weighted_avg
+        flModel = fed_feature_wise_weighted_avg(self.reservedRootModel, self.cudaId)
     elif self.basicConfig['aggregate_mode'] == 'fed_prox' or self.basicConfig['aggregate_mode'] == 'partial_fed_prox':
         from server.fedOptimizer.fedAvg import fedAvg
         flModel = fedAvg(self.reservedRootModel, self.cudaId)
