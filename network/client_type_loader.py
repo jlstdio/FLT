@@ -29,6 +29,24 @@ def client_type_loader(pickedClientsList,
                                          scorePath=scorePath,
                                          wandbQueue=wandbQueue))
             
+    if basicConfig['aggregate_mode'] == 'fed_feature_wise_weighted_avg':
+        from client.client_type.client_fedAvg import client_fedAvg
+
+        for i in pickedClientsList:
+            clients.append(client_fedAvg(client_internalId=i,
+                                         dataset=clientsDatasetDict[i],
+                                         networkConfig=networkConfig,
+                                         basicConfig=basicConfig,
+                                         clientType=typesPerClients[i],
+                                         config=clientConfig[int(typesPerClients[i])],
+                                         model=copy.deepcopy(modelToLoad),
+                                         serverRound=serverRound,
+                                         flipboard=flipboard,
+                                         turnFlag=turnFlag,
+                                         sessionId=sessionId,
+                                         scorePath=scorePath,
+                                         wandbQueue=wandbQueue))
+            
     elif basicConfig['aggregate_mode'] == 'fed_prox':
         from client.client_type.client_fedProx import client_fedProx
 

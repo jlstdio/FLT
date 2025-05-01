@@ -15,7 +15,9 @@ def server_type_loader(self, examinDataset):
 
     elif self.basicConfig['aggregate_mode'] == 'fed_feature_wise_weighted_avg':
         from server.fedOptimizer.fed_feature_wise_weighted_avg import fed_feature_wise_weighted_avg
-        flModel = fed_feature_wise_weighted_avg(self.reservedRootModel, self.cudaId)
+        additional_info_dict = {'dataset': copy.deepcopy(examinDataset)}
+        flModel = fed_feature_wise_weighted_avg(self.reservedRootModel, self.cudaId, additional_info_dict)
+        
     elif self.basicConfig['aggregate_mode'] == 'fed_prox' or self.basicConfig['aggregate_mode'] == 'partial_fed_prox':
         from server.fedOptimizer.fedAvg import fedAvg
         flModel = fedAvg(self.reservedRootModel, self.cudaId)
@@ -58,6 +60,7 @@ def server_type_loader(self, examinDataset):
             'pth_files': pth_files,
             'curRound': self.currentRound.value
         }
+
         flModel = fedAvg_w_mem(self.reservedRootModel, self.cudaId, additional_info_dict)
     elif self.basicConfig['aggregate_mode'] == 'fisher_client':
         from server.fedOptimizer.fedCurv_fisher_calc_client import fedCurv_fisher_calc_client

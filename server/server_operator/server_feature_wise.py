@@ -20,7 +20,7 @@ from server.util_server import *
 from util.util import dltAllFiles, loadData
 from server.server_operator.server_parent import server_parent
 
-class server_feature_wise(server_parent):
+class serverFeatureWise(server_parent):
     def __init__(self, rootModel, examinDataset_list, serverConfig, basicConfig, currentRound, flipboard,
                  turnFlag, sessionId, pickedClientsList, resultPath, wandbQueue, totalDistributionSet):
         super().__init__(rootModel, examinDataset_list, serverConfig, basicConfig, currentRound, flipboard,
@@ -50,28 +50,33 @@ class server_feature_wise(server_parent):
         # 아무 데이터가 없을 경우
         if not self.examinDataset_list:
             return examinDataset_combined
-
+        '''
+        self.examinDataset_list = [
+            zip(y_test[], x_test[]),
+            zip(y_test[], x_test[]),
+            zip(y_test[], x_test[]),
+            ....
+            zip(y_test[], x_test[])
+        ]
+        '''
         # 여러 개의 리스트를 모두 순회하며 레이블과 데이터를 분리 후 합침
         combined_labels = []
         combined_data = []
-        for single_dataset in self.examinDataset_list:
-            # deepcopy를 사용해 원본을 건드리지 않도록 복사
+        for idx, single_dataset in enumerate(self.examinDataset_list):
             single_dataset_copy = list(copy.deepcopy(single_dataset))
 
-            # (label, data) 형태로 되어있다면 언패킹
-            if single_dataset_copy:
-                labels, data = zip(*single_dataset_copy)
-            else:
-                labels, data = (), ()
-
-            # 분리한 레이블과 데이터를 합치기
-            combined_labels.extend(labels)
-            combined_data.extend(data)
+            # TODO : style별 모델로 바꿔야한
+            # 지금은 모든 스타일을 하나의 dataset으로 함쳐서 사용하고 있느데
+            # 2차원 list로 묶어서 style별로 iteractive하게 쓸 수 있도록 바꿔야함
+            for label, data in single_dataset_copy:
+                combined_labels.append(label)
+                combined_data.append(data)
 
         # 레이블과 데이터가 합쳐진 결과를 zip 객체로 반환
-        examinDataset_combined = zip(combined_labels, combined_data)
+        examinDataset_combined = copy.deepcopy(zip(combined_labels, combined_data))
 
         self.flModel = server_type_loader(self, examinDataset_combined)
+
         self.flModel.flush()
 
         for filePath in pth_files:

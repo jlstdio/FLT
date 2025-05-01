@@ -4,24 +4,29 @@ import os
 import urllib.request
 import tarfile
 import shutil
+from multiprocessing import Pool
+from functools import partial
 
 
 class cifar10Dataloader(object):
     CIFAR10_URL = 'https://www.cs.toronto.edu/~kriz/cifar-10-python.tar.gz'
     ARCHIVE_NAME = 'cifar-10-python.tar.gz'
 
-    def __init__(self, data_dir, normalize=True):
+    def __init__(self, data_dir, normalize=True, use_cache=True):
         """
         CIFAR-10 데이터 로더 초기화.
 
         Args:
             data_dir (str): CIFAR-10 데이터 파일이 위치한 디렉토리 경로.
             normalize (bool): 데이터를 정규화할지 여부. 기본값은 True.
+            use_cache (bool): 캐시를 사용할지 여부. 기본값은 True.
         """
         self.data_dir = data_dir
         self.batch_files = [f'data_batch_{i}' for i in range(1, 6)]
         self.test_file = 'test_batch'
         self.normalize = normalize
+        self.use_cache = use_cache
+        self.cache_file = os.path.join(data_dir, 'cifar10_cache.npz')
         self.mean = None
         self.std = None
 
@@ -29,6 +34,19 @@ class cifar10Dataloader(object):
         if not os.path.isdir(self.data_dir):
             os.makedirs(self.data_dir)
             print(f"Created directory {self.data_dir}")
+
+        # 캐시된 데이터가 있는지 확인
+        if use_cache and os.path.exists(self.cache_file):
+            print("Loading cached dataset...")
+            cache = np.load(self.cache_file)
+            self.cached_data = (
+                (cache['x_train'], cache['y_train']),
+                (cache['x_test'], cache['y_test'])
+            )
+            self.mean = cache['mean']
+            self.std = cache['std']
+        else:
+            self.cached_data = None
 
         # Check if all required files are present; if not, download and extract
         if not self._check_files_exist():
@@ -103,26 +121,32 @@ class cifar10Dataloader(object):
         print(f"\rDownload progress: {percent:.2f}%", end='')
 
     def read_batch(self, file):
+        """메모리 매핑을 사용하여 배치 파일 읽기"""
         with open(os.path.join(self.data_dir, file), 'rb') as f:
             dict = pickle.load(f, encoding='bytes')
-        data = dict[b'data']
-        labels = dict[b'labels']
-        data = data.reshape(data.shape[0], 3, 32, 32).transpose(0, 2, 3, 1)
+        
+        # 메모리 매핑된 배열로 데이터 로드
+        data = np.frombuffer(dict[b'data'], dtype=np.uint8)
+        data = data.reshape(-1, 3, 32, 32).transpose(0, 2, 3, 1)
+        labels = np.array(dict[b'labels'])
         return data, labels
 
+    def _parallel_read_batch(self, batch_files):
+        """병렬로 여러 배치 파일 읽기"""
+        with Pool() as pool:
+            results = pool.map(self.read_batch, batch_files)
+        return results
+
     def load_data(self):
-        x_train = []
-        y_train = []
+        """병렬 처리를 사용하여 데이터 로드"""
+        # 캐시된 데이터가 있으면 반환
+        if self.cached_data is not None:
+            return self.cached_data
 
-        # 학습 배치 파일 읽기
-        for batch_file in self.batch_files:
-            data, labels = self.read_batch(batch_file)
-            x_train.append(data)
-            y_train.append(labels)
-
-        # 학습 데이터와 라벨을 하나의 배열로 결합
-        x_train = np.concatenate(x_train)
-        y_train = np.concatenate(y_train)
+        # 학습 배치 파일 병렬 읽기
+        train_results = self._parallel_read_batch(self.batch_files)
+        x_train = np.concatenate([res[0] for res in train_results])
+        y_train = np.concatenate([res[1] for res in train_results])
 
         # 테스트 배치 파일 읽기
         x_test, y_test = self.read_batch(self.test_file)
@@ -134,9 +158,25 @@ class cifar10Dataloader(object):
             print(f"Computed mean: {self.mean.flatten()}")
             print(f"Computed std: {self.std.flatten()}")
 
-            # 정규화 적용
-            x_train = (x_train - self.mean) / self.std
-            x_test = (x_test - self.mean) / self.std
+            # 정규화 연산을 병렬로 수행
+            def normalize_chunk(chunk):
+                return (chunk - self.mean) / (self.std + 1e-7)
+            
+            # 학습 데이터를 청크로 나누어 병렬 처리
+            chunk_size = len(x_train) // os.cpu_count()
+            chunks = [x_train[i:i + chunk_size] for i in range(0, len(x_train), chunk_size)]
+            
+            with Pool() as pool:
+                normalized_chunks = pool.map(normalize_chunk, chunks)
+            x_train = np.concatenate(normalized_chunks)
+            
+            # 테스트 데이터 정규화
+            x_test = normalize_chunk(x_test)
+
+        # 캐시 저장
+        if self.use_cache:
+            np.savez(self.cache_file, x_train=x_train, y_train=y_train, x_test=x_test, y_test=y_test, mean=self.mean, std=self.std)
+            print(f"Cached dataset at {self.cache_file}")
 
         return (x_train, y_train), (x_test, y_test)
 

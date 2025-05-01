@@ -1,241 +1,207 @@
-import os, copy, json, time, glob, math
-from typing import List, Dict, Tuple
-import numpy as np
-import torch, torch.nn as nn
+import os, glob, math, copy, numpy as np, torch
+from torch import nn
 from sklearn.decomposition import PCA
-from util.data_prepare.data_prepare_manager import select_dataset
+from numba.cuda import is_available
+from typing import Dict, List, Callable
+from server.fedOptimizer.fedOptParent import fedOptParent
+from util.util import loadData
 
-dataset_for_type = {
-        0: "cifar-10_jg",
-        1: "cifar-10_jo",
-        2: "cifar-10_jp",
-        3: "cifar-10_r1",
-        4: "cifar-10_r2",
-        5: "cifar-10_r3",
-        6: "cifar-10_r4",
-        7: "cifar-10_lp",
-        8: "cifar-10_bp",
-        9: "cifar-10_bs",
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+def act_conv1(m, x):
+    return m.relu(m.pool(m.conv1(x))).view(x.size(0),-1)
+def act_conv2(m,x):
+    a = m.relu(m.pool(m.conv1(x)))
+    return m.relu(m.pool(m.conv2(a))).view(x.size(0),-1)
+def act_conv3(m,x):
+    a = m.relu(m.pool(m.conv1(x)))
+    a = m.relu(m.pool(m.conv2(a)))
+    return m.relu(m.conv3(a)).view(x.size(0),-1)
+
+LAYER_FNS:Dict[str,Callable] = {
+    'conv1': act_conv1,
+    'conv2': act_conv2,
+    'conv3': act_conv3     # penultimate
 }
-style_list = [dataset_for_type[i] for i in sorted(dataset_for_type)]         # 10 종
 
-def load_merged_and_replicate(style_list, per_class=10):
-    all_data_sub = []
-    ctr = {c: 0 for c in range(10)}
-    for name in style_list:
-        _, test_ds, _ = select_dataset(name)
-        for item in test_ds:
-            lbl = item[0]
-            if ctr[lbl] < per_class:
-                all_data_sub.append(item)
-                ctr[lbl] += 1
-            if all(v == per_class for v in ctr.values()):
-                break
-        ctr = {c: 0 for c in range(10)}
-    style_datasets = [all_data_sub for _ in range(10)]      # 각 클라이언트에 동일 데이터
-    return style_datasets                                   # 길이 10, 각 100 샘플
 
-STYLE_DATASETS = load_merged_and_replicate(style_list)      # 전역 캐싱
+def get_activation_for_ds(model, ds, act_fn, device="cpu"):
+    embs = []
+    model.eval()
+    for _, img in ds:
+        if isinstance(img, np.ndarray):
+            # print("img shape", img.shape) # img shape (32, 32, 3)
+            img_t = torch.from_numpy(img.transpose(2,0,1)).float().unsqueeze(0)
+            # print("img shape", img_t.shape) # img shape torch.Size([1, 3, 32, 32])
+        else:
+            img_t = img.unsqueeze(0)
+        
+        embs.append(act_fn(model, img_t.to(device)).detach().cpu().numpy())
+    
+    print(f"get_activation_for_ds: {len(embs)} images, {embs[0].shape} activations")
+    return np.vstack(embs)
 
-# ──────────────────────────────────────────────────────────────
-# 1. 모델 구조 (루트/클라이언트와 동일해야 함)
-# ──────────────────────────────────────────────────────────────
-class testNN_wo_Softmax_3_layer(nn.Module):
-    def __init__(self, out_classes=10):
-        super().__init__()
-        self.conv1 = nn.Conv2d(3, 32, 3, padding=1)
-        self.pool  = nn.MaxPool2d(2, 2)
-        self.conv2 = nn.Conv2d(32, 64, 3, padding=1)
-        self.conv3 = nn.Conv2d(64, 64, 3, padding=1)
-        self.relu  = nn.ReLU(inplace=True)
-        self.fc    = nn.Linear(64 * 8 * 8, out_classes)
 
-    def forward(self, x):
-        x = self.relu(self.pool(self.conv1(x)))
-        x = self.relu(self.pool(self.conv2(x)))
-        x = self.relu(self.conv3(x))
-        return self.fc(x.view(x.size(0), -1))
-
-# ──────────────────────────────────────────────────────────────
-# 2. 레이어별 forward (activation 추출용)
-# ──────────────────────────────────────────────────────────────
-def _layer_acts(model, imgs, layer):
-    r = nn.ReLU(inplace=False)
-    if layer == "conv1":
-        x = r(model.pool(model.conv1(imgs)))
-    elif layer == "conv2":
-        x = r(model.pool(model.conv1(imgs)))
-        x = r(model.pool(model.conv2(x)))
-    elif layer == "conv3":
-        x = r(model.pool(model.conv1(imgs)))
-        x = r(model.pool(model.conv2(x)))
-        x = r(model.conv3(x))
-    elif layer == "fc":
-        x = r(model.pool(model.conv1(imgs)))
-        x = r(model.pool(model.conv2(x)))
-        x = r(model.conv3(x))
-        x = model.fc(x.view(x.size(0), -1))
-    else:
-        raise ValueError(layer)
-    return x.view(x.size(0), -1).detach()
-
-# ──────────────────────────────────────────────────────────────
-# 3. Ω 계산 (사용자 제공 코드를 그대로 옮김)
-# ──────────────────────────────────────────────────────────────
-def greedy_feature_clustering(corr, gamma):
+def greedy_feature_clustering(corr: np.ndarray, gamma: float):
     N = corr.shape[0]
-    labels  = np.full(N, -1, int)
-    visited = np.zeros(N, bool)
-    cid = 0
+    lab = -np.ones(N, int); vis=np.zeros(N, bool); cid=0
     for i in range(N):
-        if visited[i]: continue
-        stack = [i]; visited[i] = True; labels[i] = cid
+        if vis[i]: continue
+        stack=[i]; vis[i]=True; lab[i]=cid
         while stack:
-            u = stack.pop()
-            for v in np.where(np.abs(corr[u]) >= gamma)[0]:
-                if not visited[v]:
-                    visited[v] = True; labels[v] = cid; stack.append(v)
-        cid += 1
-    return labels, cid
+            u=stack.pop()
+            for v in np.where(np.abs(corr[u])>=gamma)[0]:
+                if not vis[v]:
+                    vis[v]=True; lab[v]=cid; stack.append(v)
+        cid+=1
+    return lab, cid
 
-def compute_interaction_tensor_multi(models, style_datasets,
-                                     device="cpu", layer="conv1",
-                                     k_pca=50, thresh=90):
+
+def layer_interaction_tensor(models, act_fn, style_datasets, device=device, k_pca=50, thresh=99.5):
     M, k = len(models), k_pca
-    rows, sizes = [], []
-    for m, ds in zip(models, style_datasets):
-        imgs = torch.stack([torch.tensor(img.transpose(2,0,1)) for _, img in ds]).to(device).float()
-        A = _layer_acts(m.to(device), imgs, layer).cpu().numpy()      # (N,D)
-        rows.append(PCA(n_components=k).fit_transform(A).T)           # (k,N)
-        sizes.append(len(ds))
-    X = np.concatenate(rows, axis=0)
+    rows = []
+    # rows = pca maps
+
+    print(f'[TEST] models: {len(models)}')
+    for idx, m in enumerate(models):
+        print(f"{idx} model")
+        A = get_activation_for_ds(m, copy.deepcopy(style_datasets), act_fn, device) # (N_style × D)
+        P = PCA(n_components=k).fit_transform(A).T # (k × N_style)
+        rows.append(P)
+        
+    X = np.concatenate(rows, axis=0) # (M*k) × N_total
     X -= X.mean(1, keepdims=True)
     Xn = X / (np.linalg.norm(X, axis=1, keepdims=True) + 1e-9)
+
     corr = Xn @ Xn.T
-    gamma_corr = thresh / 100.0
+    tril = np.tril_indices(corr.shape[0], -1)
+    # gamma_corr = np.percentile(np.abs(corr[tril]), thresh)
+    gamma_corr = thresh
+    gamma_data = np.percentile(np.abs(Xn), thresh)
+
     labels, T = greedy_feature_clustering(corr, gamma_corr)
-    Omega = np.zeros((M, max(sizes), T), np.int8)
-    row_ptr = 0
-    for m_idx, N in enumerate(sizes):
+    Omega = np.zeros((M, Xn.shape[1], T), np.int8)
+    
+    for m_idx in range(M):
         for i in range(k):
-            row = row_ptr + i
+            row = m_idx * k + i
             cid = labels[row]
-            gamma_data = np.percentile(np.abs(Xn[row]), thresh)
-            mask = np.abs(Xn[row]) >= gamma_data
-            Omega[m_idx, mask[:N], cid] = 1
-        row_ptr += k
-    return Omega                                                     # (M,N,T)
+            Omega[m_idx, np.where(np.abs(Xn[row]) >= gamma_data)[0], cid] = 1
+    return torch.from_numpy(Omega), torch.from_numpy(rows)
 
-# ──────────────────────────────────────────────────────────────
-# 4. 중요도 α 계산 및 정규화
-# ──────────────────────────────────────────────────────────────
-def omega_to_alpha(omega_m):
-    return omega_m.mean(0)                                           # (T,)
 
-def normalize_alphas(raw_list):
-    Tmax = max(x.size for x in raw_list)
-    mat  = np.vstack([np.pad(x, (0, Tmax - x.size)) for x in raw_list])
-    mat  = mat / (mat.sum(0, keepdims=True) + 1e-12)
-    return [torch.tensor(v, dtype=torch.float32) for v in mat]
+def _grad_importance(model, imgs, pca_vec, act_fn):
+    model.zero_grad(set_to_none=True)
+    imgs = imgs.to(device).requires_grad_(True)
 
-# ──────────────────────────────────────────────────────────────
-# 5. 필터별 가중 평균
-# ──────────────────────────────────────────────────────────────
-def wavg_conv(stacked, w):
-    w = w.unsqueeze(2).unsqueeze(3).unsqueeze(4).expand_as(stacked)
-    return (w*stacked).sum(0) / (w.sum(0)+1e-12)
+    rep = act_fn(model, imgs) # (B,D)
+    score = (rep @ pca_vec.to(device)).sum() # scalar s
+    grads = torch.autograd.grad(score, model.parameters(), retain_graph=False, allow_unused=True)
+    return {pname: (g.abs().mean()
+            if g is not None else torch.tensor(0.,device=device))
+            for (pname,_),g in zip(model.named_parameters(),grads)}
 
-def wavg_fc(stacked, w):
-    w = w.unsqueeze(2).expand_as(stacked)
-    return (w*stacked).sum(0) / (w.sum(0)+1e-12)
 
-def wavg_bias(stacked, w):
-    return (w*stacked).sum(0) / (w.sum(0)+1e-12)
+def grad_importance_map(models: List[nn.Module], 
+                        pca_mat: List[torch.Tensor], # 각 모델별 PCA 결과 (k × N)
+                        Omega: torch.Tensor, # shape = (M, N, F)
+                        dataset, act_fn, top_freq=0.0):
 
-# ──────────────────────────────────────────────────────────────
-# 6. 부모 클래스 대체 (프로젝트側 fedOptParent 인터페이스 최소 구현)
-# ──────────────────────────────────────────────────────────────
-class _MiniParent:
-    def __init__(self, rootModel, cudaId):
-        self.resultRootModel = copy.deepcopy(rootModel)
-        self.device = torch.device(f"cuda:{cudaId}" if torch.cuda.is_available() else "cpu")
-        self.cudaId = cudaId
+    M, N, F = Omega.shape
+
+    print(f"grad_importance_map: {M} models, {N} data, {F} features")
+
+    # 🔸 1. 모델별 feature 빈도 계산 및 정규화
+    g = Omega.sum(dim=1)  # (M, F)
+    g = g / (g.max(dim=1, keepdim=True).values + 1e-12)
+    print("g shape: ", g.shape)
+
+    # 🔸 2. threshold 계산 (옵션)
+    if top_freq > 0:
+        thresh = torch.quantile(g, 1 - top_freq, dim=1, keepdim=True)  # 모델마다 다른 임계값
+
+    imap = {n: torch.tensor(0.0, device=next(models[0].parameters()).device) 
+            for n, _ in models[0].named_parameters()}
+
+    # 🔸 3. 모델마다 순회
+    for m, model in enumerate(models):
+        model.eval()
+        for t in range(F):
+            if g[m, t] == 0: continue
+            if top_freq > 0 and g[m, t] < thresh[m]: continue
+
+            pvec = pca_mat[m][t].to(next(model.parameters()).device)  # shape: (k,) (1D PCA vector)
+            
+            for _, img in dataset:
+                if not isinstance(img, torch.Tensor):
+                    img = torch.from_numpy(img.transpose(2, 0, 1)).float().unsqueeze(0)
+                    #img_t = torch.from_numpy(img.transpose(2,0,1)).float().unsqueeze(0)
+                else:
+                    img = img.unsqueeze(0).float()
+                
+                grads = _grad_importance(model, img.to(pvec.device), pvec, act_fn)
+                for k, v in grads.items():
+                    imap[k] += g[m, t] * v
+
+    # 🔸 4. 정규화
+    s = sum(imap.values()) + 1e-12
+    for k in imap:
+        imap[k] /= s
+
+    return imap
+
+
+def weighted_avg_param(param_name, client_states, wmaps):
+    stk = torch.stack([cs[param_name] for cs in client_states],0).float()
+    w   = torch.tensor([wm[param_name] for wm in wmaps],
+                       dtype=stk.dtype,device=stk.device).view(-1,*[1]*(stk.ndim-1))
+    return (w*stk).sum(0)/(w.sum()+1e-9)
+
+class fed_feature_wise_weighted_avg(fedOptParent):
+
+    def __init__(self, rootModel, cudaId, additionalInfo=None):
+
+        self.additionalInfo = additionalInfo
+        self.rootModelStatic = copy.deepcopy(rootModel)
+        self.resultRootModel = copy.deepcopy(self.rootModelStatic)
         self.clientsModels = []
+        self.clientsLosses = []
+        self.clients_types = []
+        self.clients_ids = []
+        self.max_retries = 10
+        self.device = torch.device(f"cuda:{cudaId}" if is_available() else "cpu")
 
-    def flush(self):                # server_feature_wise 에서 호출
-        self.clientsModels.clear()
+        self.merged_data = self.additionalInfo['dataset']
+        self.layer_datasets = {l: self.merged_data for l in LAYER_FNS}
 
-    def registerPth(self, path):    # pth 파일을 읽어 state_dict 리스트에 적재
-        sd = torch.load(path, map_location="cpu")
-        self.clientsModels.append(sd)
+    def aggregate(self, k_pca=50):
+        client_states = self.clientsModels
+        M = len(client_states)
 
-    def registerFisher(self, _):    # 호환용 더미
-        pass
+        # 레이어별 클라이언트 weight-map
+        layer_wmaps={l:[] for l in LAYER_FNS}
 
-    def afterWork(self):            # 호환용 더미
-        pass
+        client_models = []
+        
+        # client별 추론 모델 생성
+        for m_idx, state in enumerate(client_states):
+            model = copy.deepcopy(self.resultRootModel).to(device)
+            model.load_state_dict(state)  # Remove assignment since load_state_dict() returns _IncompatibleKeys
+            client_models.append(copy.deepcopy(model))
 
-# ──────────────────────────────────────────────────────────────
-# 7. 최종 Aggregator
-# ──────────────────────────────────────────────────────────────
-class fed_feature_wise_weighted_avg(_MiniParent):
-    def __init__(self, rootModel, cudaId, *_):
-        super().__init__(rootModel, cudaId)
+        for l, act_fn in LAYER_FNS.items():
+            print(f"Layer {l} layer")
+            Omega, P = layer_interaction_tensor(client_models, act_fn, self.layer_datasets[l], k_pca=k_pca, thresh=99.5)
+            wm = grad_importance_map(client_models, P, Omega, self.layer_datasets[l], act_fn)
+            layer_wmaps[l].append(wm)
+            
 
-    # ------------------------------------------------------ #
-    def _calc_omegas_alphas(self, models):
-        layers = ["conv1", "conv2", "conv3", "fc"]
-        omegas, alphas = {}, {}
-        for ℓ in layers:
-            Ω = compute_interaction_tensor_multi(models,
-                                                 STYLE_DATASETS,
-                                                 device=self.device,
-                                                 layer=ℓ,
-                                                 k_pca=50, thresh=90)
-            omegas[ℓ] = Ω
-            alphas_raw = [omega_to_alpha(Ω[m]) for m in range(Ω.shape[0])]
-            alphas[ℓ] = normalize_alphas(alphas_raw)               # torch 리스트
-        return alphas                                              # {ℓ:[α1…]}
+        # 레이어별 합치기
+        new_state={}
+        for l in LAYER_FNS:
+            keys=[k for k in client_states[0].keys() if k.startswith(l)]
+            for k in keys:
+                new_state[k]=weighted_avg_param(k, client_states, layer_wmaps[l])
 
-    # ------------------------------------------------------ #
-    def aggregate(self):
-        assert self.clientsModels, "[FW-Weight] no client models"
-
-        # state_dict → nn.Module 복원
-        models = []
-        for sd in self.clientsModels:
-            m = testNN_wo_Softmax_3_layer(10).to(self.device)
-            m.load_state_dict(sd, strict=True)
-            models.append(m)
-
-        alphas = self._calc_omegas_alphas(models)
-
-        # 클라이언트 state_dict stack
-        keys = self.clientsModels[0].keys()
-        new_sd = {}
-        for k in keys:
-            stacked = torch.stack([c[k] for c in self.clientsModels], 0).to(self.device)
-
-            if   "conv1.weight" in k:
-                w = torch.stack(alphas["conv1"]).to(self.device)     # (M,32)
-                new_sd[k] = wavg_conv(stacked, w)
-            elif "conv2.weight" in k:
-                w = torch.stack(alphas["conv2"]).to(self.device)
-                new_sd[k] = wavg_conv(stacked, w)
-            elif "conv3.weight" in k:
-                w = torch.stack(alphas["conv3"]).to(self.device)
-                new_sd[k] = wavg_conv(stacked, w)
-            elif "fc.weight" in k:
-                w = torch.stack(alphas["fc"]).to(self.device)        # (M,10)
-                new_sd[k] = wavg_fc(stacked, w)
-            elif ".bias" in k:
-                if   "conv1" in k: w = torch.stack(alphas["conv1"])
-                elif "conv2" in k: w = torch.stack(alphas["conv2"])
-                elif "conv3" in k: w = torch.stack(alphas["conv3"])
-                else:              w = torch.stack(alphas["fc"])
-                new_sd[k] = wavg_bias(stacked, w.to(self.device))
-            else:                              # BN 등은 단순 평균
-                new_sd[k] = stacked.mean(0)
-
-        self.resultRootModel.load_state_dict(new_sd, strict=True)
+        self.resultRootModel.load_state_dict(new_state, strict=False)
         return self.resultRootModel

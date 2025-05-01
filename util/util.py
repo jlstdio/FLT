@@ -148,7 +148,7 @@ def clientTypeDistribution(clientTypeData, numClients):
 # print(clientTypeDistribution(['0:1.0'], 100))
 
 
-def loadData(dataset, costFunc, numClass, batchSize=32):
+def loadData(dataset, costFunc="CEloss", numClass=10, batchSize=32):
     validation_y, validation_x = zip(*dataset)
 
     validation_x = np.array(validation_x)
