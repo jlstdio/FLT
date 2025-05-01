@@ -24,7 +24,6 @@ LAYER_FNS:Dict[str,Callable] = {
     'conv3': act_conv3     # penultimate
 }
 
-
 def get_activation_for_ds(model, ds, act_fn, device="cpu"):
     embs = []
     model.eval()
@@ -56,20 +55,17 @@ def greedy_feature_clustering(corr: np.ndarray, gamma: float):
         cid+=1
     return lab, cid
 
-
 def layer_interaction_tensor(models, act_fn, style_datasets, device=device, k_pca=50, thresh=99.5):
     M, k = len(models), k_pca
     rows = []
-    # rows = pca maps
-
-    print(f'[TEST] models: {len(models)}')
+    
     for idx, m in enumerate(models):
         print(f"{idx} model")
-        A = get_activation_for_ds(m, copy.deepcopy(style_datasets), act_fn, device) # (N_style × D)
-        P = PCA(n_components=k).fit_transform(A).T # (k × N_style)
-        rows.append(P)
+        A = get_activation_for_ds(m, copy.deepcopy(style_datasets), act_fn, device)
+        P = PCA(n_components=k).fit_transform(A).T
+        rows.append(torch.from_numpy(P))
         
-    X = np.concatenate(rows, axis=0) # (M*k) × N_total
+    X = np.concatenate(rows, axis=0)  # (M*k) × N_total
     X -= X.mean(1, keepdims=True)
     Xn = X / (np.linalg.norm(X, axis=1, keepdims=True) + 1e-9)
 
@@ -87,7 +83,7 @@ def layer_interaction_tensor(models, act_fn, style_datasets, device=device, k_pc
             row = m_idx * k + i
             cid = labels[row]
             Omega[m_idx, np.where(np.abs(Xn[row]) >= gamma_data)[0], cid] = 1
-    return torch.from_numpy(Omega), torch.from_numpy(rows)
+    return torch.from_numpy(Omega), rows
 
 
 def _grad_importance(model, imgs, pca_vec, act_fn):
