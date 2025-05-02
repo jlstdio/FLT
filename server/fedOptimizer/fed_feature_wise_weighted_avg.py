@@ -18,8 +18,7 @@ LAYER_FNS = {'conv1': act_conv1_batch, 'conv2': act_conv2_batch, 'conv3': act_co
 # ─────────── batched activation extractor ─────────────────────────────
 def get_activation_for_ds_batch(model, imgs, act_fn, device='cuda', batch_size=64, num_workers=4):
     dataset = TensorDataset(imgs)
-    loader = DataLoader(dataset, batch_size=batch_size, shuffle=False,
-                        num_workers=num_workers, pin_memory=True)
+    loader = DataLoader(dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=True)
     embs = []
     cached_acts = {}  # Store activations by batch index
     model.eval(); model.to(device)
@@ -53,8 +52,7 @@ def greedy_feature_clustering_jit(corr, gamma):
 def layer_interaction_tensor_batch(self, models, act_fn, imgs, device='cuda', k_pca=50, thresh=99.5, layer_key=None):
     proj_ls, comp_ls = [], []
     for m_idx, m in enumerate(tqdm(models, desc="IT models", leave=False)):
-        A, cached = get_activation_for_ds_batch(m, imgs, act_fn, device,
-                                                batch_size=128, num_workers=8)
+        A, cached = get_activation_for_ds_batch(m, imgs, act_fn, device, batch_size=256, num_workers=4)
         if layer_key is not None:
             self.cached_acts[m_idx] = cached
         A_np = A.cpu().numpy()
@@ -106,7 +104,7 @@ def _worker_gpa_batch(args):
     torch.cuda.set_device(device_id)
     base = copy.deepcopy(root_state).to(device_id)
     model = copy.deepcopy(base); model.load_state_dict(state_dict)
-    loader = DataLoader(TensorDataset(imgs), batch_size=32, shuffle=False, num_workers=2, pin_memory=True)
+    loader = DataLoader(TensorDataset(imgs), batch_size=128, shuffle=False, num_workers=2, pin_memory=True)
     w_local = {n:0.0 for n,_ in model.named_parameters()}
     comps = comps.to(device_id)
     
@@ -188,11 +186,11 @@ class fed_feature_wise_weighted_avg(fedOptParent):
         for layer_key, act_fn in LAYER_FNS.items():
             self.cached_acts = {}  # Reset cache for this layer
             Omega, comp_ls = layer_interaction_tensor_batch(
-                self, client_models, act_fn, copy.deepcopy(self.imgs), 
+                self, client_models, act_fn, self.imgs, 
                 device=self.device, k_pca=k_pca, layer_key=layer_key
             )
             wmap = grad_importance_map_parallel_batch(
-                client_models, self.resultRootModel, self.device, copy.deepcopy(self.imgs),
+                client_models, self.resultRootModel, self.device, self.imgs,
                 comp_ls, Omega, act_fn, self.cached_acts,
                 models_per_gpu, max_gpus, top_freq
             )
