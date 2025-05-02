@@ -8,8 +8,8 @@ from tqdm.auto import tqdm
 from concurrent.futures import ProcessPoolExecutor
 import torch.multiprocessing as mp
 
-mp.set_start_method("spawn", force=True)        # GPU-safe
-torch.multiprocessing.set_sharing_strategy("file_system")  # ❶ FD 폭증 방지
+mp.set_start_method("spawn", force=True)
+torch.multiprocessing.set_sharing_strategy("file_system")
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -27,9 +27,7 @@ def get_activation_for_ds(model, ds, act_fn, device="cpu"):
     model.eval()
     for _, img in ds:
         if isinstance(img, np.ndarray):
-            # print("img shape", img.shape) # img shape (32, 32, 3)
             img_t = torch.from_numpy(img.transpose(2,0,1)).float().unsqueeze(0)
-            # print("img shape", img_t.shape) # img shape torch.Size([1, 3, 32, 32])
         else:
             img_t = img.unsqueeze(0)
         
@@ -37,6 +35,7 @@ def get_activation_for_ds(model, ds, act_fn, device="cpu"):
     
     # print(f"get_activation_for_ds: {len(embs)} images, {embs[0].shape} activations")
     return np.vstack(embs)
+
 # ─────────── clustering util ────────────────────────────────────────
 def greedy_feature_clustering(corr: np.ndarray, gamma: float):
     N = corr.shape[0]
@@ -147,11 +146,34 @@ def grad_importance_map_parallel(models, root_model, imgs, comp_ls, Ω,
     return {k: torch.as_tensor(v/tot, dtype=torch.float32, device=device).clone().detach() for k,v in w_map.items()}
 
 # ─────────── weighted average util ────────────────────────────────
-def weighted_avg_param(name, client_states, wmaps):
-    stack=torch.stack([cs[name] for cs in client_states],0).float()
-    w=torch.tensor([wm[name] for wm in wmaps],dtype=stack.dtype,device=stack.device
-                   ).view(-1,*[1]*(stack.ndim-1))
-    return (w*stack).sum(0)/(w.sum()+1e-9)
+
+def weighted_avg_param(name, client_states, wmaps, eps=1e-12):
+    """
+    중요도 기반 파라미터 스케일링 후 단순 FedAvg 수행.
+    - wmaps: List[Dict[param_name, importance_score]]
+    """
+    # ➊ 클라이언트별 같은 파라미터 텐서를 모아 쌓기: shape (M, *param_shape)
+    stack = torch.stack([cs[name] for cs in client_states], dim=0).float()  
+
+    # ➋ 각 모델에서 해당 파라미터의 raw importance 벡터 (M,)
+    raw_w = torch.tensor([wm[name] for wm in wmaps],
+                         dtype=stack.dtype,
+                         device=stack.device)  
+
+    # ➌ 모델간 Min-Max 정규화 → [0,1]
+    w_min, w_max = raw_w.min(), raw_w.max()
+    if w_max > w_min + eps:
+        norm_w = (raw_w - w_min) / (w_max - w_min + eps)
+    else:
+        norm_w = torch.ones_like(raw_w)
+
+    # ➍ 브로드캐스트 가능한 형태로 바꾸기: (M, 1, 1, ..., 1)
+    view_shape = [ -1 ] + [1] * (stack.ndim - 1)
+    norm_w = norm_w.view(*view_shape)
+
+    # ➎ 중요도로 스케일링된 파라미터를 단순 평균
+    stacked = stack * norm_w
+    return stacked.mean(dim=0)
 
 # ─────────── FedOpt class ─────────────────────────────────────────
 class fed_feature_wise_weighted_avg(fedOptParent):
@@ -171,7 +193,7 @@ class fed_feature_wise_weighted_avg(fedOptParent):
         self.layer_datasets = {l: copy.deepcopy(self.merged_data) for l in LAYER_FNS}
 
     def aggregate(self, k_pca=50, models_per_gpu=10, max_gpus=1, top_freq=0.1):
-        # Convert dataset images to CHW float32 format
+        # Convert dataset images to CHW float format
         imgs = [torch.from_numpy(img.transpose(2,0,1)).float()
                        if isinstance(img, np.ndarray) else img.float()
                        for _, img in copy.deepcopy(self.merged_data)]
