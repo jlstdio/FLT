@@ -7,9 +7,21 @@ from dataPrepare.noniid import *
 from network.FLNetwork import FLNetwork
 import json
 import torch
-from server.server_operator.server_vanilla import server_vanilla
+from server.server_operator.server_2way_fed import server_2way_fed
 from util.util import showDistribution, dltAllFiles
 from util.wandbClient import WandbClient
+
+
+def process_dataset(args):
+    """Helper function for parallel processing"""
+    dataset_name, client_subset_start_point, client_subset_ratio = args
+    client_dataset, server_TestDataset, dataset_classes = select_dataset(
+        dataset_name=dataset_name,
+        client_subset_start_point=client_subset_start_point,
+        client_subset_ratio=client_subset_ratio,
+        server_subset_ratio=0.1
+    )
+    return client_dataset, server_TestDataset, dataset_classes
 
 
 def runner(networkConfigPath, dataConfigPath):
@@ -72,17 +84,22 @@ def runner(networkConfigPath, dataConfigPath):
     client_subset_start_point = 0.0
     dataset_classes = None
 
-    for idx, (dataset_name) in enumerate(dataset_list):
-        print(f"Loading {dataset_name} dataset")
+    # Prepare arguments for parallel processing
+    process_args = []
+    for idx, dataset_name in enumerate(dataset_list):
         client_subset_ratio = data_config['data_subset_ratio'][idx]
-        client_dataset, server_TestDataset, dataset_classes = select_dataset(dataset_name=dataset_name,
-                                                                             client_subset_start_point=client_subset_start_point,
-                                                                             client_subset_ratio=client_subset_ratio,
-                                                                             server_subset_ratio=1.0)
-
+        process_args.append((dataset_name, client_subset_start_point, client_subset_ratio))
         client_subset_start_point += client_subset_ratio
+
+    # Process datasets in parallel
+    with multiprocessing.Pool() as pool:
+        results = pool.map(process_dataset, process_args)
+
+    # Unpack results
+    for client_dataset, server_TestDataset, classes in results:
         clientDataset_list.append(client_dataset)
         serverTestDataset_list.append(server_TestDataset)
+        dataset_classes = classes  # Last one will be used as they're all the same
 
     clientsDatasetDict = create_dataset_dict(dataset_distribution_name=basicConfig['dataset_distribution'],
                                              clientDataset_list=clientDataset_list,
@@ -146,18 +163,18 @@ def runner(networkConfigPath, dataConfigPath):
     serverRound, flipboard, turnFlag, sessionId, pickedClients = network.getSharedInfo()
 
     modelToServer = copy.deepcopy(modelToLoad)
-    server = server_vanilla(rootModel=modelToServer,
-                    examinDataset_list=serverTestDataset_list,
-                    serverConfig=serverConfig,
-                    basicConfig=basicConfig,
-                    currentRound=serverRound,
-                    flipboard=flipboard,
-                    turnFlag=turnFlag,
-                    sessionId=sessionId,
-                    pickedClientsList=pickedClients,
-                    resultPath=resultRootPath,
-                    wandbQueue=wandbQueue,
-                    totalDistributionSet=totalDistributionSet)
+    server = server_2way_fed(rootModel=modelToServer,
+                             examinDataset_list=serverTestDataset_list,
+                            serverConfig=serverConfig,
+                            basicConfig=basicConfig,
+                            currentRound=serverRound,
+                            flipboard=flipboard,
+                            turnFlag=turnFlag,
+                            sessionId=sessionId,
+                            pickedClientsList=pickedClients,
+                            resultPath=resultRootPath,
+                            wandbQueue=wandbQueue,
+                            totalDistributionSet=totalDistributionSet)
 
     server.start()
 
@@ -175,6 +192,7 @@ def cleanUp_everything(basicConfig):
     dltAllFiles(basicConfig['receivedPthPath'])
     dltAllFiles(basicConfig['receivedDataPath'])
     dltAllFiles(basicConfig['rootModelFilePath'])
+    dltAllFiles(basicConfig['latest_sub_roots_path'])
     dltAllFiles(basicConfig['clientsMetadataFolderPath'])
     dltAllFiles(basicConfig['clientsNegotiationFolderPath'])
     dltAllFiles(basicConfig['receivedProfilePath'])
@@ -187,14 +205,14 @@ def cleanUp_everything(basicConfig):
 if __name__ == "__main__":
     multiprocessing.set_start_method('spawn')
 
-    networkConfigRoot = './config/networkConfig'
+    networkConfigRoot = './config/networkConfig/2way_FL/class_distribution'
     dataConfigRoot = './config/datasetConfig'
 
-    networkConfigPath_prefix = networkConfigRoot + '/2way_FL'
+    networkConfigPath_prefix = networkConfigRoot
 
-    networkConfig_PathList = [f'{networkConfigPath_prefix}/fed_avg_RP_singleType_noniid.json']
+    networkConfig_PathList = [f'{networkConfigPath_prefix}/fed_2way_class_dist_2CP.json']
 
-    dataConfig_PathList = [f'{dataConfigRoot}/dirichlet_by_num_of_types/dataConfig_dirichlet_1type_fraction.json']
+    dataConfig_PathList = [f'{dataConfigRoot}/dataConfig_pathological.json']
 
     for network_configPath, data_configPath in zip(networkConfig_PathList, dataConfig_PathList):
         print(f'running with {network_configPath} | {data_configPath}')

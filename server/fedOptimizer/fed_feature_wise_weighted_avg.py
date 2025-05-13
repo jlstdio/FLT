@@ -7,7 +7,7 @@ from numba.cuda import is_available
 from concurrent.futures import ProcessPoolExecutor
 from sklearn.decomposition import PCA
 import numba
-torch.multiprocessing.set_sharing_strategy("file_system")# FD ↓
+torch.multiprocessing.set_sharing_strategy("file_system") # FD ↓
 
 # ─────────── activation funcs (batch) ────────────────────────────────
 def act_conv1_batch(m, x): return m.relu(m.pool(m.conv1(x))).flatten(1)
@@ -110,11 +110,12 @@ def _worker_gpa_batch(args):
 # ─────────── parallel GPA with shared tensors ────────────────────────
 def grad_importance_map_parallel_batch(models, root_model, device, imgs, comp_ls, Omega,
                                        act_fn, models_per_gpu=10, max_gpus=1, top_freq=0.0):
-    M = Omega.shape[0]
+    M, N, F = Omega.shape
     g = Omega.sum(1).float()
-    g /= (g.max(1, keepdim=True).values + 1e-12)
+
     keep = g >= torch.quantile(g, 1-top_freq, dim=1, keepdim=True) if top_freq else torch.ones_like(g, dtype=torch.bool)
     tasks = []
+    results = []
     for m_idx in range(M):
         gpu_id = (m_idx // models_per_gpu) % max_gpus
         tasks.append((models[m_idx].state_dict(), root_model,
@@ -122,12 +123,24 @@ def grad_importance_map_parallel_batch(models, root_model, device, imgs, comp_ls
                       act_fn, gpu_id))
     with ProcessPoolExecutor(max_workers=min(len(tasks), max_gpus*models_per_gpu)) as ex:
         results = list(tqdm(ex.map(_worker_gpa_batch, tasks), total=len(tasks), desc="GPA-par"))
+
     w_map = {n:0.0 for n,_ in models[0].named_parameters()}
-    for res in results:
-        for k,v in res.items(): w_map[k] += v
+    feature_param_map = {f: {n:0.0 for n,_ in models[0].named_parameters()} for f in range(F)}
+
+    for m_idx, res in enumerate(results):
+        for f in range(F):
+            if g[m_idx, f] > 0:
+                for k,v in res.items():
+                    feature_param_map[f][k] += v * g[m_idx, f].item()
+        for k,v in res.items():
+            w_map[k] += v
+
+    # global param importance 정규화 (기존)
     tot = sum(w_map.values()) + 1e-12
-    
-    return {k: torch.as_tensor(v/tot, dtype=torch.float32, device=device) for k,v in w_map.items()}
+    w_map = {k: torch.as_tensor(v/tot, dtype=torch.float32, device=device) for k,v in w_map.items()}
+
+    # 반환값을 g_total 대신 g 로
+    return w_map, feature_param_map, g
 
 # ─────────── weighted avg (unchanged, vectorized) ───────────────────
 def weighted_avg_param(name, client_states, wmaps, eps=1e-12):
@@ -140,13 +153,27 @@ def weighted_avg_param(name, client_states, wmaps, eps=1e-12):
 
 # ─────────── inverse weighted avg (중요도 낮을수록 가중치 높임) ──────────────
 def inverse_weighted_avg_param(name, client_states, wmaps, eps=1e-12):
+    # client_states에서 해당 파라미터 tensor 쌓기
     stack = torch.stack([cs[name] for cs in client_states], dim=0).float()
+    # 각 클라이언트의 원래 중요도
     raw_w = torch.tensor([wm[name] for wm in wmaps], dtype=stack.dtype, device=stack.device)
     w_min, w_max = raw_w.min(), raw_w.max()
-    # 중요도가 낮을수록 가중치가 높아지도록 반전
-    inv_w = w_max - raw_w + eps
-    norm_w = (inv_w - inv_w.min()) / (inv_w.max() - inv_w.min() + eps) if inv_w.max() > inv_w.min() else torch.ones_like(inv_w)
-    norm_w = norm_w.view(-1, *[1]*(stack.ndim-1))
+
+    # 0~1 로 정규화
+    if w_max > w_min:
+        norm_w = (raw_w - w_min) / (w_max - w_min + eps)
+    else:
+        norm_w = torch.ones_like(raw_w)
+
+    # ★ 여기서 1/norm_w 한 뒤 log를 씌워서 너무 커지는 걸 완화
+    inv = 1.0 / (norm_w + eps)
+    # norm_w = 1.0 + torch.log(inv)      # norm_w==1 → 1, norm_w<1 → >1, log로 급성장 완화
+    norm_w = inv
+
+    # weight 형태 맞추기
+    norm_w = norm_w.view(-1, *[1] * (stack.ndim - 1))
+
+    # 가중 평균
     return (stack * norm_w).mean(dim=0)
 
 # ─────────── FedOpt 클래스 예시 통합 (레이어별 처리) ────────────────
@@ -174,37 +201,45 @@ class fed_feature_wise_weighted_avg(fedOptParent):
 
     def aggregate(self, k_pca=50, models_per_gpu=10, max_gpus=1, top_freq=0.1):
         client_states = self.clientsModels
+        M = len(client_states)
         client_models = []
         for state in client_states:
             m = copy.deepcopy(self.resultRootModel).to(self.device)
             m.load_state_dict(state)
             client_models.append(m)
 
-        # 1) 레이어별 상호작용 텐서 생성 및 중요도 매핑
         layer_wmaps = {}
+        layer_feature_param_maps = {}
+        layer_feature_freqs = {}
         for layer_key, act_fn in LAYER_FNS.items():
             Omega, comp_ls = layer_interaction_tensor_batch(client_models, act_fn, self.imgs, 
                 device=self.device, k_pca=k_pca, layer_key=layer_key
             )
-            wmap = grad_importance_map_parallel_batch(
+            wmap, feature_param_map, feature_freqs = grad_importance_map_parallel_batch(
                 client_models, self.resultRootModel, self.device, self.imgs,
                 comp_ls, Omega, act_fn,
                 models_per_gpu, max_gpus, top_freq
             )
             layer_wmaps[layer_key] = [wmap]
+            layer_feature_param_maps[layer_key] = feature_param_map
+            layer_feature_freqs[layer_key] = feature_freqs
 
-        # 2) 레이어별 가중치 평균 적용
         new_state = {}
         for name in client_states[0].keys():
-            # fc 레이어는 일반 FedAvg 적용
+            # fc 계층은 그냥 평균
             if name.startswith("fc") or name.startswith("conv3") or name.startswith("conv1"):
-                stack = torch.stack([cs[name] for cs in client_states], dim=0).float()
-                new_state[name] = stack.mean(dim=0)
+                new_state[name] = torch.stack([cs[name] for cs in client_states], dim=0).mean(dim=0)
                 continue
+
             for layer_key in LAYER_FNS:
                 if name.startswith(layer_key):
-                    # new_state[name] = weighted_avg_param(name, client_states, layer_wmaps[layer_key])
-                    new_state[name] = weighted_avg_param(name, client_states, layer_wmaps[layer_key])
+                    feature_freqs = layer_feature_freqs[layer_key]
+                    fmap = layer_feature_param_maps[layer_key]
+                    max_f = max(fmap, key=lambda f: abs(fmap[f][name]))
+                    # wmaps: [{param_name: raw_weight_i}, ...] 꼴
+                    wmaps = [ {name: feature_freqs[i, max_f].item()} for i in range(M) ]
+                    # new_state[name] = inverse_weighted_avg_param(name, client_states, wmaps)
+                    new_state[name] = weighted_avg_param(name, client_states, wmaps)
                     break
         
         torch.cuda.empty_cache()

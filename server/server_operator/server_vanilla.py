@@ -71,7 +71,7 @@ class server_vanilla(server_parent):
         # 레이블과 데이터가 합쳐진 결과를 zip 객체로 반환
         examinDataset_combined = zip(combined_labels, combined_data)
 
-        self.flModel = server_type_loader(self, examinDataset_combined)
+        self.flModel = server_type_loader(self, examinDataset_combined, None)
         self.flModel.flush()
 
         for filePath in pth_files:
@@ -103,15 +103,16 @@ class server_vanilla(server_parent):
         
         acc_summed = 0.0
 
+        device = torch.device(f"cuda:{self.cudaId}" if is_available() else "cpu")
+
         for idx, (dataset_select) in enumerate(self.examinDataset_list):
             dataset_name = str(self.basicConfig['dataset'][idx])
             examinManager = examin_model(
-                cudaId=self.cudaId,
+                device=device,
                 dataset=dataset_select,
                 basicConfig=self.basicConfig,
                 serverConfig=self.serverConfig,
                 model=self.rootModel,
-                pthPath=f'{rootModelPath}/rootModel-{testName}.pth',
                 seed=self.seed,
                 curRound=self.currentRound.value,
                 scorePath=self.scorePath,

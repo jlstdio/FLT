@@ -9,17 +9,17 @@ from util.util import scoring
 
 
 class examin_model:
-    def __init__(self, cudaId, dataset, basicConfig, serverConfig, model, pthPath, seed, curRound, scorePath, scoreFileName):
+    def __init__(self, device, dataset, basicConfig, serverConfig, model, seed, curRound, scorePath, scoreFileName):
         self.val_loader = None
         self.dataset = copy.deepcopy(dataset)
         self.serverConfig = serverConfig
         self.basicConfig = basicConfig
         self.examinData_batchSize = serverConfig['examinData_batchSize']
         self.model = model
-        self.device = torch.device(f"cuda:{cudaId}" if is_available() else "cpu")
+        self.device = device
 
-        model_state_dict = torch.load(pthPath, map_location=self.device, weights_only=True)
-        self.model.load_state_dict(model_state_dict)
+        # model_state_dict = torch.load(pthPath, map_location=self.device, weights_only=True)
+        # self.model.load_state_dict(model_state_dict)
         self.scoreFileName = scoreFileName
 
         if self.serverConfig['costFunc'] == 'CEloss':

@@ -326,3 +326,96 @@ def pathologicalSplit(dataset, classes, clients_id_list, configPath='', seed=123
             clientsDict[client_id].extend([(cls, data) for data in client_data])
 
     return clientsDict
+
+
+def pathologicalSplit_type2(dataset_list, classes, clients_id_list, configPath='', seed=1234, random_permutation=False):
+    np.random.seed(seed)
+    random.seed(seed)
+
+    with open(configPath, 'r') as file:
+        config = json.load(file)
+
+    # Initialize dictionary for clients
+    clientsDict = {i: [] for i in clients_id_list}  
+
+    # Extract configuration for the first style to determine number of clients per style
+    first_style_config = config['clientsType'][0]
+    numberOfClientsPerStyle = int(first_style_config['numberOfClients'])
+    classesPerClient = int(first_style_config['classesPerClient'])
+    
+    # Check if all styles have the same number of clients
+    for style_idx in range(len(dataset_list)):
+        if int(config['clientsType'][style_idx]['numberOfClients']) != numberOfClientsPerStyle:
+            raise ValueError("All styles must have the same number of clients")
+        if int(config['clientsType'][style_idx]['classesPerClient']) != classesPerClient:
+            raise ValueError("All styles must have the same number of classes per client")
+    
+    # Prepare fixed class distributions based on client position
+    fixed_class_distributions = {}
+    if not random_permutation:
+        # Randomly select classes for each client position (will be reused across styles)
+        class_list = list(classes)
+        random.shuffle(class_list)  # Shuffle once for randomness
+        
+        # For each client position (0 to numberOfClientsPerStyle-1)
+        for client_pos in range(numberOfClientsPerStyle):
+            # Select classesPerClient classes randomly
+            selected_classes = random.sample(class_list, classesPerClient)
+            fixed_class_distributions[client_pos] = selected_classes
+
+    for style_idx, dataset in enumerate(dataset_list):
+        per_style_config = config['clientsType'][style_idx]
+        classesPerClient = int(per_style_config['classesPerClient'])
+        numberOfClients = int(per_style_config['numberOfClients'])
+
+        # Organize data by class
+        class_data = {cls: [] for cls in classes}
+        for cls, data in dataset:
+            class_data[cls].append(data)
+
+        # Determine class assignment method
+        if random_permutation:
+            # Original logic for random permutation
+            class_order = list(np.random.permutation(classes))
+            
+            # Create client indices for this style
+            client_indices = list(range(numberOfClients))
+            
+            # Initialize client_classes to track assigned classes for each client
+            client_classes = {idx: [] for idx in client_indices}
+            
+            # First round assignment - distribute classes evenly
+            class_idx = 0
+            while class_idx < len(class_order):
+                for client_idx in client_indices:
+                    if class_idx < len(class_order) and len(client_classes[client_idx]) < classesPerClient:
+                        client_classes[client_idx].append(class_order[class_idx])
+                        class_idx += 1
+            
+            # Second round - if some clients still need more classes
+            for client_idx in client_indices:
+                while len(client_classes[client_idx]) < classesPerClient:
+                    # Pick a random class that this client doesn't already have
+                    available_classes = [c for c in class_order if c not in client_classes[client_idx]]
+                    if available_classes:
+                        additional_class = np.random.choice(available_classes)
+                        client_classes[client_idx].append(additional_class)
+                    else:
+                        # If all classes are already assigned to this client, break
+                        break
+        else:
+            # Use the fixed distribution for each client position
+            client_classes = {}
+            for client_idx in range(numberOfClients):
+                # Client position is the 1's place (modulo numberOfClientsPerStyle)
+                client_position = client_idx % numberOfClientsPerStyle
+                client_classes[client_idx] = fixed_class_distributions[client_position]
+        
+        # Assign data to clients based on their assigned classes
+        for client_idx, assigned_classes in client_classes.items():
+            actual_client_id = clients_id_list[client_idx + style_idx * numberOfClients]
+            for cls in assigned_classes:
+                client_data = class_data[cls]
+                clientsDict[actual_client_id].extend([(cls, data) for data in client_data])
+
+    return clientsDict

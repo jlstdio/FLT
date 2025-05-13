@@ -6,8 +6,8 @@ from dataPrepare.data_prepare_manager import create_dataset_dict, select_dataset
 from dataPrepare.noniid import *
 from network.FLNetwork import FLNetwork
 import json
+from server.server_operator.server_adaptive_n_guided_fed import server_adaptive_guided_fed
 import torch
-from server.server_operator.server_vanilla import server_vanilla
 from util.util import showDistribution, dltAllFiles
 from util.wandbClient import WandbClient
 
@@ -73,7 +73,6 @@ def runner(networkConfigPath, dataConfigPath):
     dataset_classes = None
 
     for idx, (dataset_name) in enumerate(dataset_list):
-        print(f"Loading {dataset_name} dataset")
         client_subset_ratio = data_config['data_subset_ratio'][idx]
         client_dataset, server_TestDataset, dataset_classes = select_dataset(dataset_name=dataset_name,
                                                                              client_subset_start_point=client_subset_start_point,
@@ -115,6 +114,9 @@ def runner(networkConfigPath, dataConfigPath):
     elif sharedConfig['model'] == 'testModel_wo_softmax_3_layer':
         from model.testModel_wo_softmax_3_layer import testNN_wo_Softmax_3_layer
         modelToLoad = testNN_wo_Softmax_3_layer(numClasses)
+    elif sharedConfig['model'] == 'testModel_wo_softmax_fc_conv3_layer':
+        from model.testModel_wo_softmax_fc_conv3_layer import testModel_wo_softmax_fc_conv3_layer
+        modelToLoad = testModel_wo_softmax_fc_conv3_layer(numClasses)
     elif sharedConfig['model'] == 'testModel_wo_softmax_5_layer':
         from model.testModel_wo_softmax_5_layer import testNN_wo_Softmax_5_layer
         modelToLoad = testNN_wo_Softmax_5_layer(numClasses)
@@ -146,18 +148,18 @@ def runner(networkConfigPath, dataConfigPath):
     serverRound, flipboard, turnFlag, sessionId, pickedClients = network.getSharedInfo()
 
     modelToServer = copy.deepcopy(modelToLoad)
-    server = server_vanilla(rootModel=modelToServer,
-                    examinDataset_list=serverTestDataset_list,
-                    serverConfig=serverConfig,
-                    basicConfig=basicConfig,
-                    currentRound=serverRound,
-                    flipboard=flipboard,
-                    turnFlag=turnFlag,
-                    sessionId=sessionId,
-                    pickedClientsList=pickedClients,
-                    resultPath=resultRootPath,
-                    wandbQueue=wandbQueue,
-                    totalDistributionSet=totalDistributionSet)
+    server = server_adaptive_guided_fed(rootModel=modelToServer,
+                             examinDataset_list=serverTestDataset_list,
+                            serverConfig=serverConfig,
+                            basicConfig=basicConfig,
+                            currentRound=serverRound,
+                            flipboard=flipboard,
+                            turnFlag=turnFlag,
+                            sessionId=sessionId,
+                            pickedClientsList=pickedClients,
+                            resultPath=resultRootPath,
+                            wandbQueue=wandbQueue,
+                            totalDistributionSet=totalDistributionSet)
 
     server.start()
 
@@ -175,6 +177,7 @@ def cleanUp_everything(basicConfig):
     dltAllFiles(basicConfig['receivedPthPath'])
     dltAllFiles(basicConfig['receivedDataPath'])
     dltAllFiles(basicConfig['rootModelFilePath'])
+    dltAllFiles(basicConfig['latest_sub_roots_path'])
     dltAllFiles(basicConfig['clientsMetadataFolderPath'])
     dltAllFiles(basicConfig['clientsNegotiationFolderPath'])
     dltAllFiles(basicConfig['receivedProfilePath'])
@@ -187,14 +190,14 @@ def cleanUp_everything(basicConfig):
 if __name__ == "__main__":
     multiprocessing.set_start_method('spawn')
 
-    networkConfigRoot = './config/networkConfig'
+    networkConfigRoot = './config/networkConfig/2way_FL/adaptive'
     dataConfigRoot = './config/datasetConfig'
 
-    networkConfigPath_prefix = networkConfigRoot + '/2way_FL'
+    networkConfigPath_prefix = networkConfigRoot
 
-    networkConfig_PathList = [f'{networkConfigPath_prefix}/fed_avg_RP_singleType_noniid.json']
+    networkConfig_PathList = [f'{networkConfigPath_prefix}/fed_adaptive_n_guided_avg_2CP_noniid.json']
 
-    dataConfig_PathList = [f'{dataConfigRoot}/dirichlet_by_num_of_types/dataConfig_dirichlet_1type_fraction.json']
+    dataConfig_PathList = [f'{dataConfigRoot}/dirichlet_by_num_of_types/dataConfig_dirichlet_10types.json']
 
     for network_configPath, data_configPath in zip(networkConfig_PathList, dataConfig_PathList):
         print(f'running with {network_configPath} | {data_configPath}')

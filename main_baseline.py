@@ -11,6 +11,16 @@ from server.server_operator.server_vanilla import server_vanilla
 from util.util import showDistribution, dltAllFiles
 from util.wandbClient import WandbClient
 
+def process_dataset(args):
+    """Helper function for parallel processing"""
+    dataset_name, client_subset_start_point, client_subset_ratio = args
+    client_dataset, server_TestDataset, dataset_classes = select_dataset(
+        dataset_name=dataset_name,
+        client_subset_start_point=client_subset_start_point,
+        client_subset_ratio=client_subset_ratio,
+        server_subset_ratio=0.1
+    )
+    return client_dataset, server_TestDataset, dataset_classes
 
 def runner(networkConfigPath, dataConfigPath):
 
@@ -72,17 +82,22 @@ def runner(networkConfigPath, dataConfigPath):
     client_subset_start_point = 0.0
     dataset_classes = None
 
-    for idx, (dataset_name) in enumerate(dataset_list):
-        print(f"Loading {dataset_name} dataset")
+    # Prepare arguments for parallel processing
+    process_args = []
+    for idx, dataset_name in enumerate(dataset_list):
         client_subset_ratio = data_config['data_subset_ratio'][idx]
-        client_dataset, server_TestDataset, dataset_classes = select_dataset(dataset_name=dataset_name,
-                                                                             client_subset_start_point=client_subset_start_point,
-                                                                             client_subset_ratio=client_subset_ratio,
-                                                                             server_subset_ratio=1.0)
-
+        process_args.append((dataset_name, client_subset_start_point, client_subset_ratio))
         client_subset_start_point += client_subset_ratio
+
+    # Process datasets in parallel
+    with multiprocessing.Pool() as pool:
+        results = pool.map(process_dataset, process_args)
+
+    # Unpack results
+    for client_dataset, server_TestDataset, classes in results:
         clientDataset_list.append(client_dataset)
         serverTestDataset_list.append(server_TestDataset)
+        dataset_classes = classes  # Last one will be used as they're all the same
 
     clientsDatasetDict = create_dataset_dict(dataset_distribution_name=basicConfig['dataset_distribution'],
                                              clientDataset_list=clientDataset_list,
@@ -192,7 +207,7 @@ if __name__ == "__main__":
 
     networkConfigPath_prefix = networkConfigRoot + '/2way_FL'
 
-    networkConfig_PathList = [f'{networkConfigPath_prefix}/fed_avg_RP_old.json']
+    networkConfig_PathList = [f'{networkConfigPath_prefix}/fed_avg_RP_new_noniid.json']
 
     dataConfig_PathList = [f'{dataConfigRoot}/dirichlet_by_num_of_types/dataConfig_dirichlet_10types.json']
 

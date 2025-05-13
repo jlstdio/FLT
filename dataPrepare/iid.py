@@ -13,13 +13,13 @@ def iidSplit(dataset_list, classes, total_clients_id_list, configPath, dataset_c
         config = json.load(file)
 
     type_info = config['dataset_mixing_info']
-    type_ratio = config['type_ratio']
+    client_type_ratio = config['client_type_ratio']
 
     print("type_info")
     print(type_info)
 
-    print("type_ratio")
-    print(type_ratio)
+    print("client_type_ratio")
+    print(client_type_ratio)
 
     # 데이터셋 타입별 데이터 분할
     dataset_fraction_list = {idx_type: [] for idx_type in range(len(dataset_list))}
@@ -33,12 +33,12 @@ def iidSplit(dataset_list, classes, total_clients_id_list, configPath, dataset_c
             past_idx = size_dataset_fraction_idx
 
     # 클라이언트 리스트를 타입 비율에 따라 분할
-    if not np.isclose(sum(type_ratio), 1.0):
+    if not np.isclose(sum(client_type_ratio), 1.0):
         raise ValueError("type_ratio의 합이 1이 아닙니다.")
 
     clients_list_by_type = []
     current_idx = 0
-    for ratio in type_ratio:
+    for ratio in client_type_ratio:
         next_idx = current_idx + int(len(total_clients_id_list) * ratio)
         clients_list_by_type.append(total_clients_id_list[current_idx:next_idx])
         current_idx = next_idx

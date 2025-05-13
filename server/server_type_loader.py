@@ -7,7 +7,7 @@ import os
 ##########################################################
 
 
-def server_type_loader(self, examinDataset):
+def server_type_loader(self, examinDataset, guideDataset_list):
     flModel = None
     if self.basicConfig['aggregate_mode'] == 'fedAvg' or self.basicConfig['aggregate_mode'] == 'fed_avg':
         from server.fedOptimizer.fedAvg import fedAvg
@@ -188,5 +188,39 @@ def server_type_loader(self, examinDataset):
             }
 
         flModel = fed_2way_avg(self.reservedRootModel, self.cudaId, additional_info_dict)
+
+    
+    elif self.basicConfig['aggregate_mode'] == 'fed_adaptive_avg':
+        from server.fedOptimizer.fed_adaptive_avg import fed_adaptive_avg
+
+        additional_info_dict = {
+            'cluster_info': self.type_info_by_clients,
+            'picked_clients': self.pickedClients,
+            'rootModelFilePath': self.basicConfig['rootModelFilePath'],
+            'latest_sub_roots_path': self.basicConfig['latest_sub_roots_path'],
+            'resultPath': self.resultPath,
+            'testName': self.basicConfig['testName'],
+            'global_mix_ratio': self.serverConfig['global_mix_ratio'],
+            'curRound': self.currentRound.value
+            }
+
+        flModel = fed_adaptive_avg(self.reservedRootModel, self.cudaId, additional_info_dict)
+    
+    elif self.basicConfig['aggregate_mode'] == 'fed_adaptive_n_guided_avg':
+        from server.fedOptimizer.fed_adaptive_n_guided_avg import fed_adaptive_n_guided_avg
+
+        additional_info_dict = {
+            'cluster_info': self.type_info_by_clients,
+            'picked_clients': self.pickedClients,
+            'guideDataset_list': guideDataset_list,
+            'rootModelFilePath': self.basicConfig['rootModelFilePath'],
+            'latest_sub_roots_path': self.basicConfig['latest_sub_roots_path'],
+            'resultPath': self.resultPath,
+            'testName': self.basicConfig['testName'],
+            'global_mix_ratio': self.serverConfig['global_mix_ratio'],
+            'curRound': self.currentRound.value
+            }
+
+        flModel = fed_adaptive_n_guided_avg(self.reservedRootModel, self.cudaId, additional_info_dict)
 
     return flModel

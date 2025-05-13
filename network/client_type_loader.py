@@ -28,8 +28,8 @@ def client_type_loader(pickedClientsList,
                                          sessionId=sessionId,
                                          scorePath=scorePath,
                                          wandbQueue=wandbQueue))
-            
-    if basicConfig['aggregate_mode'] == 'fed_feature_wise_weighted_avg':
+
+    elif basicConfig['aggregate_mode'] == 'fed_feature_wise_weighted_avg':
         from client.client_type.client_fedAvg import client_fedAvg
 
         for i in pickedClientsList:
@@ -298,8 +298,45 @@ def client_type_loader(pickedClientsList,
                                           sessionId=sessionId,
                                           scorePath=scorePath,
                                           wandbQueue=wandbQueue))
-            
+    
+    elif basicConfig['aggregate_mode'] == 'fed_adaptive_avg':
+        from client.client_type.client_adapter_fed import client_adapter_fed
+
+        for i in pickedClientsList:
+            clients.append(client_adapter_fed(client_internalId=i,
+                                              dataset=clientsDatasetDict[i],
+                                              networkConfig=networkConfig,
+                                              basicConfig=basicConfig,
+                                              clientType=typesPerClients[i],
+                                              config=clientConfig[int(typesPerClients[i])],
+                                              model=copy.deepcopy(modelToLoad),
+                                              serverRound=serverRound,
+                                              flipboard=flipboard,
+                                              turnFlag=turnFlag,
+                                              sessionId=sessionId,
+                                              scorePath=scorePath,
+                                              wandbQueue=wandbQueue))
+    
+    elif basicConfig['aggregate_mode'] == 'fed_adaptive_n_guided_avg':
+        from client.client_type.client_adapter_fed import client_adapter_fed
+
+        for i in pickedClientsList:
+            clients.append(client_adapter_fed(client_internalId=i,
+                                              dataset=clientsDatasetDict[i],
+                                              networkConfig=networkConfig,
+                                              basicConfig=basicConfig,
+                                              clientType=typesPerClients[i],
+                                              config=clientConfig[int(typesPerClients[i])],
+                                              model=copy.deepcopy(modelToLoad),
+                                              serverRound=serverRound,
+                                              flipboard=flipboard,
+                                              turnFlag=turnFlag,
+                                              sessionId=sessionId,
+                                              scorePath=scorePath,
+                                              wandbQueue=wandbQueue))
+
     else:
         return None
 
+    # print(f'[TEST] {len(clients)}')
     return clients

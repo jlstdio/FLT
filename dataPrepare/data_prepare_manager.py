@@ -85,53 +85,63 @@ def select_dataset(dataset_name, client_subset_start_point=0.0, client_subset_ra
         dataloader = cifar10_expanded_3_dataloader('./dataset/cifar10_expanded_3')
         dataloader.load_data()  # Load data first
         (x_train, y_train), (x_test, y_test) = dataloader.get_freq_bandstop()
-    elif dataset_name == 'cifar10_exposure':
+    elif dataset_name == 'cifar-10_exposure':
         from dataset.cifar10_expanded_realistic.cifar10_expanded_realistic_dataloader import cifar10_expanded_realistic_dataloader
         dataloader = cifar10_expanded_realistic_dataloader('./dataset/cifar10_expanded_realistic')
+        dataloader.load_data()  # Load data first
         (x_train, y_train), (x_test, y_test) = dataloader.get_exposure_data()
-    elif dataset_name == 'cifar10_whitebalance':
+    elif dataset_name == 'cifar-10_whitebalance':
         from dataset.cifar10_expanded_realistic.cifar10_expanded_realistic_dataloader import cifar10_expanded_realistic_dataloader
         dataloader = cifar10_expanded_realistic_dataloader('./dataset/cifar10_expanded_realistic')
+        dataloader.load_data()  # Load data first
         (x_train, y_train), (x_test, y_test) = dataloader.get_whitebalance_data()
 
-    elif dataset_name == 'cifar10_highiso':
+    elif dataset_name == 'cifar-10_highiso':
         from dataset.cifar10_expanded_realistic.cifar10_expanded_realistic_dataloader import cifar10_expanded_realistic_dataloader
         dataloader = cifar10_expanded_realistic_dataloader('./dataset/cifar10_expanded_realistic')
+        dataloader.load_data()  # Load data first
         (x_train, y_train), (x_test, y_test) = dataloader.get_highiso_data()
 
-    elif dataset_name == 'cifar10_motionblur':
+    elif dataset_name == 'cifar-10_motionblur':
         from dataset.cifar10_expanded_realistic.cifar10_expanded_realistic_dataloader import cifar10_expanded_realistic_dataloader
         dataloader = cifar10_expanded_realistic_dataloader('./dataset/cifar10_expanded_realistic')
+        dataloader.load_data()  # Load data first
         (x_train, y_train), (x_test, y_test) = dataloader.get_motionblur_data()
 
-    elif dataset_name == 'cifar10_lensdistortion':
+    elif dataset_name == 'cifar-10_lensdistortion':
         from dataset.cifar10_expanded_realistic.cifar10_expanded_realistic_dataloader import cifar10_expanded_realistic_dataloader
         dataloader = cifar10_expanded_realistic_dataloader('./dataset/cifar10_expanded_realistic')
+        dataloader.load_data()  # Load data first
         (x_train, y_train), (x_test, y_test) = dataloader.get_lensdistortion_data()
 
-    elif dataset_name == 'cifar10_fog':
+    elif dataset_name == 'cifar-10_fog':
         from dataset.cifar10_expanded_realistic.cifar10_expanded_realistic_dataloader import cifar10_expanded_realistic_dataloader
         dataloader = cifar10_expanded_realistic_dataloader('./dataset/cifar10_expanded_realistic')
+        dataloader.load_data()  # Load data first
         (x_train, y_train), (x_test, y_test) = dataloader.get_fog_data()
 
-    elif dataset_name == 'cifar10_rain':
+    elif dataset_name == 'cifar-10_rain':
         from dataset.cifar10_expanded_realistic.cifar10_expanded_realistic_dataloader import cifar10_expanded_realistic_dataloader
         dataloader = cifar10_expanded_realistic_dataloader('./dataset/cifar10_expanded_realistic')
+        dataloader.load_data()  # Load data first
         (x_train, y_train), (x_test, y_test) = dataloader.get_rain_data()
 
-    elif dataset_name == 'cifar10_snow':
+    elif dataset_name == 'cifar-10_snow':
         from dataset.cifar10_expanded_realistic.cifar10_expanded_realistic_dataloader import cifar10_expanded_realistic_dataloader
         dataloader = cifar10_expanded_realistic_dataloader('./dataset/cifar10_expanded_realistic')
+        dataloader.load_data()  # Load data first
         (x_train, y_train), (x_test, y_test) = dataloader.get_snow_data()
 
-    elif dataset_name == 'cifar10_lowlight':
+    elif dataset_name == 'cifar-10_lowlight':
         from dataset.cifar10_expanded_realistic.cifar10_expanded_realistic_dataloader import cifar10_expanded_realistic_dataloader
         dataloader = cifar10_expanded_realistic_dataloader('./dataset/cifar10_expanded_realistic')
+        dataloader.load_data()  # Load data first
         (x_train, y_train), (x_test, y_test) = dataloader.get_lowlight_data()
 
-    elif dataset_name == 'cifar10_outoffocus':
+    elif dataset_name == 'cifar-10_outoffocus':
         from dataset.cifar10_expanded_realistic.cifar10_expanded_realistic_dataloader import cifar10_expanded_realistic_dataloader
         dataloader = cifar10_expanded_realistic_dataloader('./dataset/cifar10_expanded_realistic')
+        dataloader.load_data()  # Load data first
         (x_train, y_train), (x_test, y_test) = dataloader.get_outoffocus_data()
 
     classes = list(set(y_test))
@@ -223,6 +233,14 @@ def create_dataset_dict(dataset_distribution_name, clientDataset_list, classes, 
                                                configPath=dataConfigPath,
                                                seed=seed)
 
+    elif dataset_distribution_name == 'pathological_multi_style':
+        from dataPrepare.noniid import pathologicalSplit_type2
+        clientsDatasetDict = pathologicalSplit_type2(dataset_list=clientDataset_list,
+                                               classes=classes,
+                                               clients_id_list=clients_id_list,
+                                               configPath=dataConfigPath,
+                                               seed=seed)
+        
     '''
     elif dataset_distribution_name == 'dirichlet_diff_by_type':
         from dataPrepare.partiallyNonIid import difference_bias_by_type

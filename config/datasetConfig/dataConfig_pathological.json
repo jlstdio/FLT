@@ -1,8 +1,59 @@
 {
+  "data_subset_ratio": [0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1],
+  "client_type_ratio": [0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1],
+  "dataset_mixing_info": {
+    "0": [1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+    "1": [0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+    "2": [0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+    "3": [0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+    "4": [0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+    "5": [0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0],
+    "6": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0],
+    "7": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0],
+    "8": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0],
+    "9": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0]
+  },
+  "dataset_distribution_info_path": "",
   "clientsType": [
     {
       "numberOfClients": 10,
-      "classesPerClient": 1
+      "classesPerClient": 5
+    },
+    {
+      "numberOfClients": 10,
+      "classesPerClient": 5
+    },
+    {
+      "numberOfClients": 10,
+      "classesPerClient": 5
+    },
+    {
+      "numberOfClients": 10,
+      "classesPerClient": 5
+    },
+    {
+      "numberOfClients": 10,
+      "classesPerClient": 5
+    },
+    {
+      "numberOfClients": 10,
+      "classesPerClient": 5
+    },
+    {
+      "numberOfClients": 10,
+      "classesPerClient": 5
+    },
+    {
+      "numberOfClients": 10,
+      "classesPerClient": 5
+    },
+    {
+      "numberOfClients": 10,
+      "classesPerClient": 5
+    },
+    {
+      "numberOfClients": 10,
+      "classesPerClient": 5
     }
   ]
 }

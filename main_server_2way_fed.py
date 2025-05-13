@@ -192,7 +192,7 @@ if __name__ == "__main__":
 
     networkConfigPath_prefix = networkConfigRoot
 
-    networkConfig_PathList = [f'{networkConfigPath_prefix}/fed_2way_avg_2CP_mu1e-3.json']
+    networkConfig_PathList = [f'{networkConfigPath_prefix}/fed_2way_avg_2CP_mu1e-3_new_ds.json']
 
     dataConfig_PathList = [f'{dataConfigRoot}/dirichlet_by_num_of_types/dataConfig_dirichlet_10types.json']
 

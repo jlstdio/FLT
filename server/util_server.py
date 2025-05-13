@@ -1,3 +1,4 @@
+import copy
 import json
 import os
 from collections import Counter
@@ -104,3 +105,41 @@ def calculate_wait_time(roundStartTime, pth_files, currentRound, clientsWaitingT
         key = f"client/efficiency/waitingTime/client{client_id} waiting time"
         logList = [key, waitingTime / 1e9, currentRound]
         wandbQueue.put(logList)
+
+def build_adaptive_model(adapter_model, general_model, adapterEndPoint, device):
+        # Specifically handle testNN_wo_Softmax_3_layer model architecture
+        # adapterEndPoint values:
+        # 0: Only adapt conv1
+        # 1: Adapt conv1 and conv2
+        # 2: Adapt conv1, conv2, and conv3
+        # 3: Adapt everything including fc layer
+        
+        # Create a new model instance
+        from model.testModel_wo_softmax_3_layer import testNN_wo_Softmax_3_layer
+        # from model.testModel_wo_softmax_5_layer import testNN_wo_Softmax_5_layer
+        
+        # Get number of output classes from existing model
+        if hasattr(adapter_model.fc, 'out_features'):
+            output_classes = adapter_model.fc.out_features
+        else:
+            # Fallback to default 10 classes
+            output_classes = 10
+        
+        # Create a new model instance
+        new_model = testNN_wo_Softmax_3_layer(output_classes).to(device)
+        # new_model = testNN_wo_Softmax_5_layer(output_classes).to(device)
+        
+        # Copy layers based on adapterEndPoint
+        # Copy adapted layers from adapter_model
+        new_model.conv1 = copy.deepcopy(adapter_model.conv1)
+        # new_model.conv2 = copy.deepcopy(adapter_model.conv2)
+        
+        new_model.conv2 = copy.deepcopy(general_model.conv2)
+        new_model.conv3 = copy.deepcopy(general_model.conv3)
+        # new_model.conv4 = copy.deepcopy(general_model.conv4)
+        # new_model.conv5 = copy.deepcopy(general_model.conv5)
+        new_model.fc = copy.deepcopy(general_model.fc)
+
+        # Replace adapter_model with the new composite model
+        return new_model
+    

@@ -20,13 +20,13 @@ from server.util_server import *
 from util.util import dltAllFiles, loadData
 from server.server_operator.server_parent import server_parent
 
-class server_2way_fed(server_parent):
+class server_adaptive_fed(server_parent):
     def __init__(self, rootModel, examinDataset_list, serverConfig, basicConfig, currentRound, flipboard,
                  turnFlag, sessionId, pickedClientsList, resultPath, wandbQueue, totalDistributionSet):
         super().__init__(rootModel, examinDataset_list, serverConfig, basicConfig, currentRound, flipboard,
                  turnFlag, sessionId, pickedClientsList, resultPath, wandbQueue, totalDistributionSet)
         
-        print('server_2way_fed init')
+        print('server_adaptive_fed init')
     
     def root_model_init(self):
         rootModelPath = self.basicConfig['rootModelFilePath']
@@ -123,6 +123,7 @@ class server_2way_fed(server_parent):
 
         for idx, (dataset_select) in enumerate(self.examinDataset_list):
             dataset_name = str(self.basicConfig['dataset'][idx])
+
             model_to_examin = copy.deepcopy(self.rootModel)
             
             device = torch.device(f"cuda:{self.cudaId}" if is_available() else "cpu")
@@ -133,6 +134,15 @@ class server_2way_fed(server_parent):
                 sub_model_state_dict = torch.load(sub_model_path, map_location='cpu', weights_only=True)
                 model_to_examin.load_state_dict(sub_model_state_dict)
                 print(f'found adaptive model for client type - {idx}')
+
+                if self.basicConfig['aggregate_mode'] == 'fed_adaptive_avg':
+                    if self.currentRound.value > 5:
+                        model_to_examin = build_adaptive_model(model_to_examin,
+                                                            self.rootModel,
+                                                            0,
+                                                            device)
+                    else:
+                        model_to_examin = self.rootModel
 
             examinManager = examin_model(
                 device=device,
